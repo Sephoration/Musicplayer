@@ -1,0 +1,23 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/main.qml</file>
+        <file>qml/TitleBar.qml</file>
+        <file>qml/ControlBar.qml</file>
+        <file>qml/LyricsPanel.qml</file>
+        <file>qml/Visualizer2D.qml</file>
+        <file>qml/MiniPlayer.qml</file>
+        <file>qml/MediaLibrary.qml</file>
+        <file>qml/LibrarySidebar.qml</file>
+        <file>qml/LibraryContent.qml</file>
+        <file>qml/PlaylistSidebar.qml</file>
+        <file>qml/SettingsPanel.qml</file>
+        <file>qml/Toast.qml</file>
+        <file>qml/ControlButton.qml</file>
+        <file>qml/TimerButton.qml</file>
+        <file>qml/WindowButton.qml</file>
+        <file>qml/ViewTab.qml</file>
+        <file>qml/SettingsGroup.qml</file>
+        <file>qml/SettingRow.qml</file>
+        <file>particle.svg</file>
+    </qresource>
+</RCC>
