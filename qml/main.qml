@@ -6,7 +6,7 @@ import QtQuick.Particles
 
 // ============================================================
 //  主窗口 —— 整个应用的入口
-//  布局：背景层 → 标题栏 → 内容区(歌词/媒体库/设置) → 控制栏 → Toast
+//  布局：背景层（渐变+深度）→ 标题栏 → 内容区(歌词/媒体库/设置) → 控制栏 → Toast
 //  同时加载迷你播放器窗口（在独立 Window 中）
 // ============================================================
 
@@ -50,6 +50,31 @@ ApplicationWindow {
             color: "#0c0c14"
             z: -1
 
+            // 微妙的径向渐变 — 中心偏亮，边缘暗，制造深度
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#080810" }
+                    GradientStop { position: 0.5; color: "#0c0c14" }
+                    GradientStop { position: 1.0; color: "#08080e" }
+                }
+            }
+
+            // 顶部微光（营造环境光）
+            Rectangle {
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width * 0.8
+                height: parent.height * 0.4
+                radius: height
+                gradient: Gradient {
+                    orientation: Gradient.Vertical
+                    GradientStop { position: 0.0; color: Qt.rgba(0.39, 0.4, 0.95, 0.04) }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+            }
+
             // 自定义背景图（半透明叠加）
             Image {
                 id: bgImage
@@ -57,7 +82,7 @@ ApplicationWindow {
                 source: AppModel.backgroundImage || ""
                 fillMode: Image.PreserveAspectCrop
                 visible: source != ""
-                opacity: 0.4
+                opacity: 0.35
             }
 
             // 暗色遮罩

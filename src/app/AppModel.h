@@ -282,14 +282,14 @@ private:
     int m_fontSize = 15;
     bool m_showTranslation = true;
     QString m_lyricsActiveWordColor = "#a78bfa";
-    QString m_lyricsActiveLineColor = "#d4d4d4";
-    QString m_lyricsInactiveColor = "#555555";
-    int m_lyricsOpacity = 50;
+    QString m_lyricsActiveLineColor = "#e8e8e8";
+    QString m_lyricsInactiveColor = "#888888";
+    int m_lyricsOpacity = 60;
     QString m_lyricsBgColor = "#ffffff";
 
     // Background
     QString m_backgroundImage;
-    int m_backgroundOverlay = 40;
+    int m_backgroundOverlay = 30;
 
     // Crossfade
     bool m_crossfade = false;

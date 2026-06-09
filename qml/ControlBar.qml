@@ -16,12 +16,24 @@ Rectangle {
     color: "#0f0f1a"
     height: 80
 
-    // 顶部分隔线
+    // 半透明顶部渐变毛边（取代硬边分割线）
     Rectangle {
         anchors.top: parent.top
         width: parent.width
         height: 1
-        color: "#1a1a2e"
+        color: "#ffffff12"
+    }
+
+    // 微弱的顶部光晕
+    Rectangle {
+        anchors.top: parent.top
+        width: parent.width
+        height: 20
+        gradient: Gradient {
+            orientation: Gradient.Vertical
+            GradientStop { position: 0.0; color: Qt.rgba(0.39, 0.4, 0.95, 0.03) }
+            GradientStop { position: 1.0; color: "transparent" }
+        }
     }
 
     ColumnLayout {
@@ -184,7 +196,7 @@ Rectangle {
 
                     Text {
                         text: AppModel.currentSongTitle || "未选择歌曲"
-                        color: "#d9d9d9"
+                        color: "#e8e8e8"
                         font.pixelSize: 12
                         font.weight: Font.Medium
                         elide: Text.ElideRight
@@ -192,7 +204,7 @@ Rectangle {
                     }
                     Text {
                         text: AppModel.currentSongArtist || ""
-                        color: "#666666"
+                        color: "#999999"
                         font.pixelSize: 10
                         elide: Text.ElideRight
                         width: parent.width

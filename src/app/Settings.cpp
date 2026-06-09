@@ -24,13 +24,13 @@ void Settings::setShowTranslation(bool s) { m_settings.setValue("lyrics/showTran
 QString Settings::lyricsActiveWordColor() const { return m_settings.value("lyrics/activeWordColor", "#a78bfa").toString(); }
 void Settings::setLyricsActiveWordColor(const QString& c) { m_settings.setValue("lyrics/activeWordColor", c); }
 
-QString Settings::lyricsActiveLineColor() const { return m_settings.value("lyrics/activeLineColor", "#d4d4d4").toString(); }
+QString Settings::lyricsActiveLineColor() const { return m_settings.value("lyrics/activeLineColor", "#e8e8e8").toString(); }
 void Settings::setLyricsActiveLineColor(const QString& c) { m_settings.setValue("lyrics/activeLineColor", c); }
 
-QString Settings::lyricsInactiveColor() const { return m_settings.value("lyrics/inactiveColor", "#555555").toString(); }
+QString Settings::lyricsInactiveColor() const { return m_settings.value("lyrics/inactiveColor", "#888888").toString(); }
 void Settings::setLyricsInactiveColor(const QString& c) { m_settings.setValue("lyrics/inactiveColor", c); }
 
-int Settings::lyricsOpacity() const { return m_settings.value("lyrics/opacity", 50).toInt(); }
+int Settings::lyricsOpacity() const { return m_settings.value("lyrics/opacity", 60).toInt(); }
 void Settings::setLyricsOpacity(int v) { m_settings.setValue("lyrics/opacity", v); }
 
 QString Settings::lyricsBgColor() const { return m_settings.value("lyrics/bgColor", "#ffffff").toString(); }

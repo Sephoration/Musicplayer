@@ -6,7 +6,7 @@ import Qt5Compat.GraphicalEffects
 //  歌词面板 —— 核心展示区
 //  上半部分：封面图（圆形）+ 歌曲标题/歌手
 //  下半部分：歌词逐句滚动 + 逐字高亮（卡拉OK风格）
-//  如果这首歌没有歌词，显示"暂无歌词"
+//  背景采用多层半透明叠加 + 发光边框，实现通透的玻璃质感
 // ============================================================
 
 Item {
@@ -38,28 +38,58 @@ Item {
     // =====================================================
     //  无歌词状态：显示封面 + 歌名 + 暂无歌词
     // =====================================================
-    Rectangle {
-        id: noLyricsPanel
+    Item {
+        id: noLyricsWrapper
         anchors.centerIn: parent
         width: Math.min(parent.width * 0.65, 560)
-        height: noLyricsCol.implicitHeight + 72
-        radius: 18
-        color: Qt.rgba(1, 1, 1, AppModel.lyricsOpacity / 100 * 0.06)
-        border.width: 1; border.color: "#ffffff0f"
+        height: noLyricsCol.implicitHeight + 100
         visible: !hasLyrics && AppModel.currentSongTitle !== ""
 
-        layer.enabled: true
-        layer.effect: DropShadow {
-            radius: 16
-            samples: 25
-            color: Qt.rgba(0, 0, 0, 0.4)
-            source: noLyricsPanel
+        // ---- 玻璃背景层 ----
+        // 亮色基底（微弱的白，形成半透明玻璃感）
+        Rectangle {
+            anchors.fill: parent
+            radius: 18
+            color: Qt.rgba(1, 1, 1, 0.04 + AppModel.lyricsOpacity / 100 * 0.08)
         }
 
+        // 边框光晕
+        Rectangle {
+            anchors.fill: parent
+            radius: 18
+            color: "transparent"
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.06)
+        }
+
+        // 顶部高光（模拟环境光反射）
+        Rectangle {
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: parent.width * 0.7
+            height: parent.height * 0.5
+            radius: width / 2
+            gradient: Gradient {
+                orientation: Gradient.Vertical
+                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.04) }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+        }
+
+        // 阴影（让面板与背景拉开层次）
+        layer.enabled: true
+        layer.effect: DropShadow {
+            radius: 24
+            samples: 33
+            color: Qt.rgba(0, 0, 0, 0.5)
+            source: noLyricsWrapper
+        }
+
+        // ---- 内容 ----
         Column {
             id: noLyricsCol
             anchors.centerIn: parent
-            spacing: 8
+            spacing: 10
             width: parent.width - 88
 
             // 封面圆圈（带发光阴影）
@@ -68,14 +98,13 @@ Item {
                 width: 130; height: 130; radius: 65
                 color: mainWindow.accentColor
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottomMargin: 20
                 clip: true
 
                 layer.enabled: true
                 layer.effect: DropShadow {
-                    radius: 24
+                    radius: 28
                     samples: 33
-                    color: Qt.rgba(0.39, 0.4, 0.95, 0.35)
+                    color: Qt.rgba(0.39, 0.4, 0.95, 0.45)
                     source: coverNoLyrics
                 }
 
@@ -97,20 +126,20 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: AppModel.currentSongTitle || "未播放"
-                color: "#e6e6e6"
+                color: "#f0f0f0"
                 font.pixelSize: 20
                 font.weight: Font.SemiBold
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: AppModel.currentSongArtist || ""
-                color: "#595959"
+                color: "#999999"
                 font.pixelSize: 12
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "暂无歌词"
-                color: "#333333"
+                color: "#888888"
                 font.pixelSize: 12
                 topPadding: 20
             }
@@ -118,26 +147,55 @@ Item {
     }
 
     // =====================================================
-    //  有歌词状态：显示当前行及上下各几行的歌词
+    //  有歌词状态 — 玻璃面板 + 逐字高亮
     // =====================================================
-    Rectangle {
-        id: lyricsPanel
+    Item {
+        id: lyricsWrapper
         anchors.centerIn: parent
         width: Math.min(parent.width * 0.65, 560)
-        height: lyricsCol.implicitHeight + 72
-        radius: 18
-        color: Qt.rgba(1, 1, 1, AppModel.lyricsOpacity / 100 * 0.06)
-        border.width: 1; border.color: "#ffffff0f"
+        height: lyricsCol.implicitHeight + 100
         visible: hasLyrics
 
-        layer.enabled: true
-        layer.effect: DropShadow {
-            radius: 16
-            samples: 25
-            color: Qt.rgba(0, 0, 0, 0.4)
-            source: lyricsPanel
+        // ---- 玻璃背景层 ----
+        Rectangle {
+            anchors.fill: parent
+            radius: 18
+            color: Qt.rgba(1, 1, 1, 0.04 + AppModel.lyricsOpacity / 100 * 0.08)
         }
 
+        // 边框光晕
+        Rectangle {
+            anchors.fill: parent
+            radius: 18
+            color: "transparent"
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.06)
+        }
+
+        // 顶部高光
+        Rectangle {
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: parent.width * 0.7
+            height: parent.height * 0.5
+            radius: width / 2
+            gradient: Gradient {
+                orientation: Gradient.Vertical
+                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.04) }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+        }
+
+        // 阴影
+        layer.enabled: true
+        layer.effect: DropShadow {
+            radius: 24
+            samples: 33
+            color: Qt.rgba(0, 0, 0, 0.5)
+            source: lyricsWrapper
+        }
+
+        // ---- 内容 ----
         Column {
             id: lyricsCol
             anchors.centerIn: parent
@@ -148,14 +206,14 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: AppModel.currentSongTitle || ""
-                color: "#e6e6e6"
+                color: "#f0f0f0"
                 font.pixelSize: 20
                 font.weight: Font.SemiBold
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: AppModel.currentSongArtist || ""
-                color: "#595959"
+                color: "#999999"
                 font.pixelSize: 12
             }
 
@@ -165,14 +223,14 @@ Item {
                 width: 100; height: 100; radius: 50
                 color: mainWindow.accentColor
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.topMargin: 10
+                anchors.topMargin: 12
                 clip: true
 
                 layer.enabled: true
                 layer.effect: DropShadow {
-                    radius: 20
+                    radius: 22
                     samples: 33
-                    color: Qt.rgba(0.39, 0.4, 0.95, 0.3)
+                    color: Qt.rgba(0.39, 0.4, 0.95, 0.4)
                     source: coverLyrics
                 }
 
@@ -184,7 +242,7 @@ Item {
                 }
             }
 
-            // 歌词行显示区（最多显示当前行 + 上下各2行）
+            // 歌词行显示区
             Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: parent.width
@@ -197,11 +255,6 @@ Item {
                     spacing: 8
                     anchors.horizontalCenter: parent.horizontalCenter
 
-                    // 动态取当前行前后各 2 行
-                    property int startIdx: Math.max(0, currentLineIndex - 2)
-                    property int endIdx: Math.min(lines.length, currentLineIndex + 3)
-
-                    // 用 Repeater 生成可见歌词行
                     Repeater {
                         model: {
                             var result = []
@@ -216,7 +269,7 @@ Item {
 
                         delegate: Item {
                             width: lyricsArea.width
-                            height: lineContent.implicitHeight
+                            height: lineContent.implicitHeight + 4
 
                             property bool isCurrentLine: modelData.isCurrent
                             property var lineData: modelData.line
@@ -227,57 +280,24 @@ Item {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 width: parent.width
 
-                                // ---- 歌词文字（逐字高亮） ----
-                                // 如果是当前行且有逐字时间戳，则逐个字渲染
+                                // 歌词文字行
                                 Rectangle {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    width: lyricRow.implicitWidth + 12
-                                    height: lyricRow.implicitHeight + 4
-                                    radius: 6
-                                    color: isCurrentLine ? Qt.rgba(1, 1, 1, 0.03) : "transparent"
+                                    width: lyricRow.implicitWidth + 16
+                                    height: lyricRow.implicitHeight + 6
+                                    radius: 8
+                                    color: isCurrentLine ? Qt.rgba(1, 1, 1, 0.04 + AppModel.lyricsOpacity / 100 * 0.06) : "transparent"
 
                                     Row {
                                         id: lyricRow
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         spacing: 0
 
-                                        // 使用 Loader 动态生成逐字高亮
-                                        // 如果当前行且 words 数组存在，逐个渲染
                                         property var words: lineData ? (lineData.words || []) : []
                                         property bool showWords: isCurrentLine && words.length > 0
 
-                                        Component {
-                                            id: wordHighlight
-                                            Item {
-                                                property int wi: 0
-                                                property var word: null
-                                                property int activeWordIdx: currentWordIndex
-                                                property real wordProg: wordProgress
-                                                property bool highlight: showWords && wi <= activeWordIdx
-
-                                                implicitWidth: wordText.implicitWidth
-                                                implicitHeight: wordText.implicitHeight
-
-                                                Text {
-                                                    id: wordText
-                                                    text: word ? (word.word + " ") : ""
-                                                    font.pixelSize: AppModel.fontSize
-                                                    font.letterSpacing: 1
-                                                    color: highlight
-                                                           ? AppModel.lyricsActiveWordColor
-                                                           : (isCurrentLine
-                                                              ? AppModel.lyricsActiveLineColor
-                                                              : AppModel.lyricsInactiveColor)
-                                                    // 发光效果（需要 Qt5Compat.GraphicalEffects，暂跳过）
-                                                    layer.enabled: highlight
-                                                }
-                                            }
-                                        }
-
-                                        // 简化实现：直接渲染所有字
                                         Repeater {
                                             model: lyricRow.showWords ? lyricRow.words : [lineData ? (lineData.text || " ") : " "]
-                                            // 如果 showWords，model 是 words 数组；否则是单行文本
                                             Text {
                                                 text: {
                                                     if (lyricRow.showWords) {
@@ -294,17 +314,16 @@ Item {
                                                                ? AppModel.lyricsActiveLineColor
                                                                : AppModel.lyricsInactiveColor
                                                     }
-                                                    // 逐字高亮
                                                     return (index <= currentWordIndex)
                                                            ? AppModel.lyricsActiveWordColor
                                                            : AppModel.lyricsActiveLineColor
                                                 }
-                                                // 已高亮字发光效果
+                                                // 高亮字发光效果
                                                 property bool isActiveWord: lyricRow.showWords && index <= currentWordIndex
                                                 layer.enabled: isActiveWord
                                                 layer.effect: Glow {
-                                                    radius: 6
-                                                    samples: 13
+                                                    radius: 8
+                                                    samples: 17
                                                     color: AppModel.lyricsActiveWordColor
                                                     transparentBorder: true
                                                 }
@@ -313,13 +332,13 @@ Item {
                                     }
                                 }
 
-                                // ---- 翻译 ----
+                                // 翻译
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     text: (lineData && lineData.translation) || ""
                                     visible: text !== "" && isCurrentLine && AppModel.showTranslation
                                     color: AppModel.lyricsInactiveColor
-                                    font.pixelSize: AppModel.fontSize - 3
+                                    font.pixelSize: AppModel.fontSize - 2
                                     font.italic: true
                                     topPadding: 4
                                 }
