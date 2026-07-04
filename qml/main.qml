@@ -32,8 +32,10 @@ ApplicationWindow {
         }
     }
 
-    // 关闭窗口时保存状态
-    onClosing: {
+    // 关闭窗口时最小化到托盘
+    onClosing: function(close) {
+        close.accepted = false
+        mainWindow.hide()
         AppModel.showToast("已最小化到托盘")
     }
 

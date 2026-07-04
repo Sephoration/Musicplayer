@@ -121,7 +121,7 @@ void LibraryManager::readMetadata(const QString& filePath, QString& title, QStri
     // 尝试通过 QMediaPlayer 获取时长（仅时长，不用 QMediaMetaData）
     // Qt 6.11 中 QMediaMetaData API 变动大，元数据改用文件名解析
     QEventLoop loop;
-    QTimer::singleShot(4000, &loop, &QEventLoop::quit);
+    QTimer::singleShot(1200, &loop, &QEventLoop::quit);
 
     QObject::connect(probe, &QMediaPlayer::durationChanged, probe, [&](qint64 dur) {
         if (dur > 0) {
@@ -326,6 +326,51 @@ LibraryManager::ImportResult LibraryManager::importFolder(
             result.total++;
             // Add to "all" songs category
         }
+    }
+
+    saveIndex(songs, cats, favs, recents);
+    return result;
+}
+
+LibraryManager::ImportResult LibraryManager::importFiles(
+    const QStringList& filePaths,
+    const QVector<SongInfo>& currentSongs,
+    const QVector<int>& favorites,
+    const QVector<int>& recentPlays) {
+
+    ensureDirs();
+    QVector<SongInfo> songs = currentSongs;
+    QVector<CategoryInfo> cats;
+    QVector<int> favs = favorites, recents = recentPlays;
+
+    QFile f(metadataPath());
+    if (f.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        f.close();
+        for (const auto& v : doc.object().value("categories").toArray()) {
+            QJsonObject co = v.toObject();
+            CategoryInfo ci;
+            ci.id = co["id"].toString();
+            ci.name = co["name"].toString();
+            ci.icon = co["icon"].toString();
+            for (const auto& sv : co["songIds"].toArray())
+                ci.songIds.append(sv.toInt());
+            cats.append(ci);
+        }
+    }
+
+    ImportResult result;
+    for (const QString& path : filePaths) {
+        if (!QFileInfo::exists(path)) {
+            result.errors.append(path);
+            continue;
+        }
+        const int before = songs.size();
+        SongInfo meta = importSongInternal(path, songs);
+        if (songs.size() == before) continue;
+        if (meta.hasLyrics) result.lyrics++;
+        else result.noLyrics++;
+        result.total++;
     }
 
     saveIndex(songs, cats, favs, recents);

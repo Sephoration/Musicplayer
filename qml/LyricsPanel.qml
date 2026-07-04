@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
 
 // ============================================================
 //  歌词面板 —— 核心展示区
@@ -76,15 +75,6 @@ Item {
             }
         }
 
-        // 阴影（让面板与背景拉开层次）
-        layer.enabled: true
-        layer.effect: DropShadow {
-            radius: 24
-            samples: 33
-            color: Qt.rgba(0, 0, 0, 0.5)
-            source: noLyricsWrapper
-        }
-
         // ---- 内容 ----
         Column {
             id: noLyricsCol
@@ -99,14 +89,6 @@ Item {
                 color: mainWindow.accentColor
                 anchors.horizontalCenter: parent.horizontalCenter
                 clip: true
-
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    radius: 28
-                    samples: 33
-                    color: Qt.rgba(0.39, 0.4, 0.95, 0.45)
-                    source: coverNoLyrics
-                }
 
                 Image {
                     anchors.fill: parent
@@ -186,15 +168,6 @@ Item {
             }
         }
 
-        // 阴影
-        layer.enabled: true
-        layer.effect: DropShadow {
-            radius: 24
-            samples: 33
-            color: Qt.rgba(0, 0, 0, 0.5)
-            source: lyricsWrapper
-        }
-
         // ---- 内容 ----
         Column {
             id: lyricsCol
@@ -225,14 +198,6 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.topMargin: 12
                 clip: true
-
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    radius: 22
-                    samples: 33
-                    color: Qt.rgba(0.39, 0.4, 0.95, 0.4)
-                    source: coverLyrics
-                }
 
                 Image {
                     anchors.fill: parent
@@ -318,15 +283,7 @@ Item {
                                                            ? AppModel.lyricsActiveWordColor
                                                            : AppModel.lyricsActiveLineColor
                                                 }
-                                                // 高亮字发光效果
                                                 property bool isActiveWord: lyricRow.showWords && index <= currentWordIndex
-                                                layer.enabled: isActiveWord
-                                                layer.effect: Glow {
-                                                    radius: 8
-                                                    samples: 17
-                                                    color: AppModel.lyricsActiveWordColor
-                                                    transparentBorder: true
-                                                }
                                             }
                                         }
                                     }

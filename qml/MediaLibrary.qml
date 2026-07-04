@@ -15,7 +15,7 @@ Item {
         id: folderDialog
         title: "选择音乐文件夹"
         onAccepted: {
-            AppModel.importFolder(selectedFolder.toString().replace("file:///", ""))
+            AppModel.importFolder(selectedFolder.toString())
         }
     }
 
@@ -27,7 +27,7 @@ Item {
         onAccepted: {
             var paths = []
             for (var i = 0; i < selectedFiles.length; i++) {
-                paths.push(selectedFiles[i].toString().replace("file:///", ""))
+                paths.push(selectedFiles[i].toString())
             }
             AppModel.importFiles(paths)
         }

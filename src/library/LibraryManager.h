@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <QVariantMap>
 #include <QVariantList>
@@ -126,6 +127,10 @@ public:
                               const QVector<SongInfo>& currentSongs,
                               const QVector<int>& favorites,
                               const QVector<int>& recentPlays);
+    ImportResult importFiles(const QStringList& filePaths,
+                             const QVector<SongInfo>& currentSongs,
+                             const QVector<int>& favorites,
+                             const QVector<int>& recentPlays);
 
     // Delete
     void deleteSong(int songId, QVector<SongInfo>& songs,

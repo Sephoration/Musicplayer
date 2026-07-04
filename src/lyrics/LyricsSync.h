@@ -24,6 +24,10 @@ signals:
     void hasLyricsChanged();
 
 private:
+    void resetState();
+    void rebuildLineCache();
+
     LrcData m_data;
     QVariantMap m_state;
+    QVariantList m_lineCache;
 };

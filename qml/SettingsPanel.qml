@@ -201,8 +201,8 @@ ScrollView {
             SettingRow {
                 label: "恢复播放"
                 Switch {
-                    checked: true  // always enabled
-                    onCheckedChanged: {}  // no-op, just for display
+                    checked: AppModel.resumePlayback
+                    onCheckedChanged: AppModel.setResumePlayback(checked)
                 }
             }
         }
@@ -289,8 +289,7 @@ ScrollView {
         title: "选择背景图片"
         nameFilters: ["图片文件 (*.jpg *.jpeg *.png *.bmp)"]
         onAccepted: {
-            var path = selectedFile.toString().replace("file:///", "")
-            AppModel.setBackgroundImagePath(path)
+            AppModel.setBackgroundImagePath(selectedFile.toString())
         }
     }
 }

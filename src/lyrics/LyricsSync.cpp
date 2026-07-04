@@ -1,15 +1,7 @@
 #include "LyricsSync.h"
 
 LyricsSync::LyricsSync(QObject* parent) : QObject(parent) {
-    // Initialize empty state
-    QVariantMap st;
-    st["currentLine"] = QVariant();
-    st["currentLineIndex"] = -1;
-    st["currentWordIndex"] = -1;
-    st["wordProgress"] = 0.0;
-    st["lines"] = QVariantList();
-    st["hasLyrics"] = false;
-    m_state = st;
+    resetState();
 }
 
 bool LyricsSync::hasLyrics() const {
@@ -17,62 +9,69 @@ bool LyricsSync::hasLyrics() const {
 }
 
 void LyricsSync::load(const QString& lrcContent, const QString& translationContent) {
+    bool hadLyrics = hasLyrics();
     m_data = LrcParser::parse(lrcContent, translationContent);
-    if (hasLyrics()) emit hasLyricsChanged();
+    rebuildLineCache();
+    resetState();
+    if (hadLyrics != hasLyrics()) emit hasLyricsChanged();
+    emit syncStateChanged();
 }
 
 void LyricsSync::update(double timeSeconds) {
-    QVariantMap st;
-
     if (!hasLyrics()) {
-        st["currentLine"] = QVariant();
-        st["currentLineIndex"] = -1;
-        st["currentWordIndex"] = -1;
-        st["wordProgress"] = 0.0;
-        st["lines"] = QVariantList();
-        st["hasLyrics"] = false;
-    } else {
-        LrcLine* currentLine = LrcParser::findCurrentLine(m_data, timeSeconds);
-        int lineIndex = currentLine
-            ? static_cast<int>(currentLine - m_data.lines.data())
-            : -1;
-
-        int wordIndex = -1;
-        double wordProgress = 0.0;
-        if (currentLine) {
-            wordIndex = LrcParser::findCurrentWord(*currentLine, timeSeconds);
-            if (wordIndex >= 0 && wordIndex < currentLine->words.size())
-                wordProgress = LrcParser::getWordProgress(currentLine->words[wordIndex], timeSeconds);
-            else if (wordIndex >= currentLine->words.size())
-                wordProgress = 1.0;
+        if (m_state.value("hasLyrics").toBool()) {
+            resetState();
+            emit syncStateChanged();
         }
-
-        st["currentLine"] = currentLine ? QVariant::fromValue(currentLine->toMap()) : QVariant();
-        st["currentLineIndex"] = lineIndex;
-        st["currentWordIndex"] = wordIndex;
-        st["wordProgress"] = wordProgress;
-
-        QVariantList lineList;
-        for (const auto& l : m_data.lines)
-            lineList.append(l.toMap());
-        st["lines"] = lineList;
-        st["hasLyrics"] = true;
+        return;
     }
 
-    m_state = st;
+    LrcLine* currentLine = LrcParser::findCurrentLine(m_data, timeSeconds);
+    int lineIndex = currentLine
+        ? static_cast<int>(currentLine - m_data.lines.data())
+        : -1;
+
+    int wordIndex = -1;
+    double wordProgress = 0.0;
+    if (currentLine) {
+        wordIndex = LrcParser::findCurrentWord(*currentLine, timeSeconds);
+        if (wordIndex >= 0 && wordIndex < currentLine->words.size())
+            wordProgress = LrcParser::getWordProgress(currentLine->words[wordIndex], timeSeconds);
+        else if (wordIndex >= currentLine->words.size())
+            wordProgress = 1.0;
+    }
+
+    m_state["currentLine"] = currentLine ? QVariant::fromValue(currentLine->toMap()) : QVariant();
+    m_state["currentLineIndex"] = lineIndex;
+    m_state["currentWordIndex"] = wordIndex;
+    m_state["wordProgress"] = wordProgress;
+    m_state["lines"] = m_lineCache;
+    m_state["hasLyrics"] = true;
     emit syncStateChanged();
 }
 
 void LyricsSync::clear() {
+    bool hadLyrics = hasLyrics();
     m_data = LrcData();
+    m_lineCache.clear();
+    resetState();
+    emit syncStateChanged();
+    if (hadLyrics) emit hasLyricsChanged();
+}
+
+void LyricsSync::resetState() {
     QVariantMap st;
     st["currentLine"] = QVariant();
     st["currentLineIndex"] = -1;
     st["currentWordIndex"] = -1;
     st["wordProgress"] = 0.0;
-    st["lines"] = QVariantList();
-    st["hasLyrics"] = false;
+    st["lines"] = m_lineCache;
+    st["hasLyrics"] = hasLyrics();
     m_state = st;
-    emit syncStateChanged();
-    emit hasLyricsChanged();
+}
+
+void LyricsSync::rebuildLineCache() {
+    m_lineCache.clear();
+    for (const auto& line : m_data.lines)
+        m_lineCache.append(line.toMap());
 }

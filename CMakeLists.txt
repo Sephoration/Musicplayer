@@ -14,7 +14,6 @@ find_package(Qt6 REQUIRED COMPONENTS
     Multimedia
     Gui
     Widgets
-    Core5Compat
 )
 
 # ---- C++ 源文件 ----
@@ -59,7 +58,6 @@ target_link_libraries(MusicPlayer PRIVATE
     Qt6::Multimedia
     Qt6::Gui
     Qt6::Widgets
-    Qt6::Core5Compat
 )
 
 # ---- Windows: 作为 GUI 应用（不弹出控制台） ----

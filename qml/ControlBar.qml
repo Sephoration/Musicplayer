@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
 
 // ============================================================
 //  底部控制栏 —— 整个播放器的核心操作区
@@ -88,14 +87,6 @@ Rectangle {
                         border.width: 2
                         border.color: Qt.rgba(1, 1, 1, 0.25)
                         x: 7
-
-                        layer.enabled: true
-                        layer.effect: DropShadow {
-                            radius: 8
-                            samples: 17
-                            color: mainWindow.accentColor
-                            source: progressHandle
-                        }
                     }
                 }
 
@@ -235,15 +226,6 @@ Rectangle {
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: Qt.lighter(mainWindow.accentColor, 1.3) }
                         GradientStop { position: 1.0; color: mainWindow.accentColor }
-                    }
-
-                    // 外层光晕
-                    layer.enabled: true
-                    layer.effect: DropShadow {
-                        radius: 12
-                        samples: 25
-                        color: Qt.rgba(0.39, 0.4, 0.95, 0.35)
-                        source: playButton
                     }
 
                     Text {

@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
 
 // ============================================================
 //  迷你播放器 —— 紧凑型窗口，始终置顶
@@ -44,14 +43,6 @@ ApplicationWindow {
                 color: AppModel.accentColor || "#6366f1"
                 Layout.alignment: Qt.AlignVCenter
                 clip: true
-
-                layer.enabled: true
-                layer.effect: DropShadow {
-                    radius: 8
-                    samples: 17
-                    color: Qt.rgba(0.39, 0.4, 0.95, 0.3)
-                    source: miniCover
-                }
 
                 Image {
                     anchors.fill: parent
@@ -119,13 +110,6 @@ ApplicationWindow {
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: Qt.lighter(AppModel.accentColor || "#6366f1", 1.3) }
                         GradientStop { position: 1.0; color: AppModel.accentColor || "#6366f1" }
-                    }
-                    layer.enabled: true
-                    layer.effect: DropShadow {
-                        radius: 8
-                        samples: 17
-                        color: Qt.rgba(0.39, 0.4, 0.95, 0.3)
-                        source: miniPlayBtn
                     }
                     Text {
                         anchors.centerIn: parent

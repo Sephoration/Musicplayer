@@ -53,6 +53,9 @@ class AppModel : public QObject {
     Q_PROPERTY(bool crossfade READ crossfade WRITE setCrossfade NOTIFY crossfadeChanged)
     Q_PROPERTY(int crossfadeDuration READ crossfadeDuration WRITE setCrossfadeDuration NOTIFY crossfadeDurationChanged)
 
+    // --- Resume ---
+    Q_PROPERTY(bool resumePlayback READ resumePlayback WRITE setResumePlayback NOTIFY resumePlaybackChanged)
+
     // --- Sleep timer ---
     Q_PROPERTY(qint64 sleepTimerEnd READ sleepTimerEnd NOTIFY sleepTimerEndChanged)
     Q_PROPERTY(qint64 sleepTimerRemaining READ sleepTimerRemaining NOTIFY sleepTimerRemainingChanged)
@@ -115,6 +118,8 @@ public:
 
     bool crossfade() const { return m_crossfade; }
     int crossfadeDuration() const { return m_crossfadeDuration; }
+
+    bool resumePlayback() const { return m_resumePlayback; }
 
     qint64 sleepTimerEnd() const { return m_sleepTimerEnd; }
     qint64 sleepTimerRemaining() const;
@@ -183,6 +188,7 @@ public:
     Q_INVOKABLE void setBackgroundOverlay(int v);
     Q_INVOKABLE void setCrossfade(bool v);
     Q_INVOKABLE void setCrossfadeDuration(int d);
+    Q_INVOKABLE void setResumePlayback(bool v);
     Q_INVOKABLE void setAccentColor(const QString& c);
     Q_INVOKABLE void setActiveCategoryId(const QString& id);
     Q_INVOKABLE void setLibraryFilter(const QString& f);
@@ -220,6 +226,7 @@ signals:
     void backgroundOverlayChanged();
     void crossfadeChanged();
     void crossfadeDurationChanged();
+    void resumePlaybackChanged();
     void sleepTimerEndChanged();
     void sleepTimerRemainingChanged();
     void accentColorChanged();
@@ -293,7 +300,10 @@ private:
 
     // Crossfade
     bool m_crossfade = false;
-    int m_crossfadeDuration = 2000;
+    int m_crossfadeDuration = 2;
+
+    // Resume
+    bool m_resumePlayback = true;
 
     // Sleep timer
     qint64 m_sleepTimerEnd = 0;
@@ -315,6 +325,7 @@ private:
     bool m_playlistOpen = false;
     bool m_miniMode = false;
     bool m_settingsOpen = false;
+    bool m_loadingState = false;
 
     // Toast
     QString m_toastMessage;

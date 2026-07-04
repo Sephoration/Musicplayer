@@ -11,6 +11,12 @@
 #include <QRandomGenerator>
 #include <algorithm>
 
+static QString toLocalPath(const QString& value) {
+    QUrl url(value);
+    if (url.isLocalFile()) return url.toLocalFile();
+    return value;
+}
+
 AppModel* AppModel::s_instance = nullptr;
 
 AppModel* AppModel::instance() {
@@ -30,9 +36,6 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
                        + "/MusicPlayer";
     m_library = new LibraryManager(dataPath, this);
     m_settings = new Settings(this);
-
-    // --- 从持久化存储恢复状态 ---
-    loadState();
 
     // --- 连接音频引擎信号 ---
     // 时间更新 → 同步歌词 + 频谱
@@ -77,7 +80,7 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
 
     // --- 频谱定时更新 ---
     m_spectrumTimer = new QTimer(this);
-    m_spectrumTimer->setInterval(50); // 20fps
+    m_spectrumTimer->setInterval(80);
     connect(m_spectrumTimer, &QTimer::timeout, this, &AppModel::updateSpectrum);
     m_spectrumTimer->start();
 
@@ -101,6 +104,9 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
         }
     });
     m_sleepTimerTick->start();
+
+    // --- 从持久化存储恢复状态 ---
+    loadState();
 }
 
 // =====================================================================
@@ -227,9 +233,11 @@ void AppModel::playNext() {
     QVariantMap item = m_queue[nextIdx].toMap();
     int songId = item["id"].toInt();
 
+    const int crossfadeMs = m_crossfadeDuration * 1000;
+
     // 如果开启了淡入淡出
     if (m_crossfade && m_playing) {
-        m_audioEngine->fadeOut(m_crossfadeDuration);
+        m_audioEngine->fadeOut(crossfadeMs);
     }
 
     m_queueIndex = nextIdx;
@@ -238,7 +246,7 @@ void AppModel::playNext() {
     saveState();
 
     if (m_crossfade) {
-        m_audioEngine->fadeIn(m_crossfadeDuration, m_volume);
+        m_audioEngine->fadeIn(crossfadeMs, m_volume);
     }
     m_audioEngine->play();
 }
@@ -249,8 +257,10 @@ void AppModel::playPrev() {
     int prevIdx = (m_queueIndex > 0) ? m_queueIndex - 1 : m_queue.size() - 1;
     QVariantMap item = m_queue[prevIdx].toMap();
 
+    const int crossfadeMs = m_crossfadeDuration * 1000;
+
     if (m_crossfade && m_playing) {
-        m_audioEngine->fadeOut(m_crossfadeDuration);
+        m_audioEngine->fadeOut(crossfadeMs);
     }
 
     m_queueIndex = prevIdx;
@@ -259,7 +269,7 @@ void AppModel::playPrev() {
     saveState();
 
     if (m_crossfade) {
-        m_audioEngine->fadeIn(m_crossfadeDuration, m_volume);
+        m_audioEngine->fadeIn(crossfadeMs, m_volume);
     }
     m_audioEngine->play();
 }
@@ -392,14 +402,15 @@ void AppModel::rebuildCategories() {
     m_internalRecents.clear();
     m_internalCategories.clear();
 
+    QJsonObject metadata;
     QFile f(m_library->metadataPath());
     if (f.open(QIODevice::ReadOnly)) {
-        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        metadata = QJsonDocument::fromJson(f.readAll()).object();
         f.close();
 
-        for (const auto& v : doc.object().value("favorites").toArray())
+        for (const auto& v : metadata.value("favorites").toArray())
             m_internalFavorites.append(v.toInt());
-        for (const auto& v : doc.object().value("recentPlays").toArray())
+        for (const auto& v : metadata.value("recentPlays").toArray())
             m_internalRecents.append(v.toInt());
     }
 
@@ -427,21 +438,16 @@ void AppModel::rebuildCategories() {
     recentCat.songIds = QVector<int>(m_internalRecents.rbegin(), m_internalRecents.rend());
     m_internalCategories.append(recentCat);
 
-    // 用户创建的分类（从同一个 JSON 再读一次）
-    QFile f2(m_library->metadataPath());
-    if (f2.open(QIODevice::ReadOnly)) {
-        QJsonDocument doc2 = QJsonDocument::fromJson(f2.readAll());
-        f2.close();
-        for (const auto& v : doc2.object().value("categories").toArray()) {
-            QJsonObject co = v.toObject();
-            CategoryInfo ci;
-            ci.id = co["id"].toString();
-            ci.name = co["name"].toString();
-            ci.icon = co["icon"].toString();
-            for (const auto& sv : co["songIds"].toArray())
-                ci.songIds.append(sv.toInt());
-            m_internalCategories.append(ci);
-        }
+    // 用户创建的分类
+    for (const auto& v : metadata.value("categories").toArray()) {
+        QJsonObject co = v.toObject();
+        CategoryInfo ci;
+        ci.id = co["id"].toString();
+        ci.name = co["name"].toString();
+        ci.icon = co["icon"].toString();
+        for (const auto& sv : co["songIds"].toArray())
+            ci.songIds.append(sv.toInt());
+        m_internalCategories.append(ci);
     }
 
     // 转换为 QVariantList 输出给 QML
@@ -452,12 +458,13 @@ void AppModel::rebuildCategories() {
 }
 
 void AppModel::importFolder(const QString& folderPath) {
-    if (folderPath.isEmpty()) return;
+    QString localFolderPath = toLocalPath(folderPath);
+    if (localFolderPath.isEmpty()) return;
 
     m_libraryLoading = true;
     emit libraryLoadingChanged();
 
-    auto result = m_library->importFolder(folderPath, m_internalSongs,
+    auto result = m_library->importFolder(localFolderPath, m_internalSongs,
                                            m_internalFavorites, m_internalRecents);
 
     // 刷新
@@ -470,15 +477,21 @@ void AppModel::importFolder(const QString& folderPath) {
 void AppModel::importFiles(const QStringList& filePaths) {
     if (filePaths.isEmpty()) return;
 
+    QStringList localPaths;
+    for (const QString& f : filePaths) {
+        QString localPath = toLocalPath(f);
+        if (!localPath.isEmpty()) localPaths.append(localPath);
+    }
+    if (localPaths.isEmpty()) return;
+
     m_libraryLoading = true;
     emit libraryLoadingChanged();
 
-    for (const QString& f : filePaths) {
-        m_library->importSong(f);
-    }
+    auto result = m_library->importFiles(localPaths, m_internalSongs,
+                                          m_internalFavorites, m_internalRecents);
 
     loadLibrary();
-    showToast(QStringLiteral("导入完成：%1 首歌曲").arg(filePaths.size()));
+    showToast(QStringLiteral("导入完成：%1 首歌曲").arg(result.total));
 }
 
 void AppModel::deleteSong(int songId) {
@@ -606,7 +619,7 @@ void AppModel::clearQueue() {
 //  背景图
 // =====================================================================
 void AppModel::setBackgroundImagePath(const QString& path) {
-    QString dest = m_library->setBackgroundImage(path);
+    QString dest = m_library->setBackgroundImage(toLocalPath(path));
     if (!dest.isEmpty()) {
         m_backgroundImage = QUrl::fromLocalFile(dest).toString();
         emit backgroundImageChanged();
@@ -698,6 +711,8 @@ void AppModel::updateSpectrum() {
 //  状态持久化
 // =====================================================================
 void AppModel::saveState() {
+    if (m_loadingState) return;
+
     m_settings->saveQueue(m_queue, m_queueIndex, m_currentSongId,
                           m_currentSongTitle, m_currentSongArtist);
     m_settings->setVolume(m_volume);
@@ -715,12 +730,15 @@ void AppModel::saveState() {
     m_settings->setBackgroundOverlay(m_backgroundOverlay);
     m_settings->setCrossfade(m_crossfade);
     m_settings->setCrossfadeDuration(m_crossfadeDuration);
+    m_settings->setResumePlayback(m_resumePlayback);
     m_settings->setAccentColor(m_accentColor);
     m_settings->setLastTime(m_currentTime);
     m_settings->setLastPlaying(m_playing);
 }
 
 void AppModel::loadState() {
+    m_loadingState = true;
+
     m_volume = m_settings->volume();
     m_playMode = m_settings->playMode();
     m_visualizerColor = m_settings->visualizerColor();
@@ -735,7 +753,8 @@ void AppModel::loadState() {
     m_backgroundImage = m_settings->backgroundImage();
     m_backgroundOverlay = m_settings->backgroundOverlay();
     m_crossfade = m_settings->crossfade();
-    m_crossfadeDuration = m_settings->crossfadeDuration();
+    m_crossfadeDuration = std::max(1, std::min(10, m_settings->crossfadeDuration()));
+    m_resumePlayback = m_settings->resumePlayback();
     m_accentColor = m_settings->accentColor();
 
     // 恢复队列
@@ -744,12 +763,25 @@ void AppModel::loadState() {
     m_currentSongId = m_settings->savedCurrentSongId();
     m_currentSongTitle = m_settings->savedCurrentSongTitle();
     m_currentSongArtist = m_settings->savedCurrentSongArtist();
+    m_internalSongs = m_library->loadIndex();
+
+    if (m_resumePlayback && m_currentSongId > 0 && !m_internalSongs.isEmpty()) {
+        loadSongInternal(m_currentSongId, m_currentSongTitle, m_currentSongArtist);
+        const double lastTime = m_settings->lastTime();
+        if (lastTime > 0) {
+            m_audioEngine->seek(lastTime);
+            m_currentTime = lastTime;
+            emit currentTimeChanged();
+        }
+    }
 
     // 初始化音量
     m_audioEngine->setVolume(m_volume);
 
     // 初始化主题色
     applyAccentColor();
+
+    m_loadingState = false;
 }
 
 void AppModel::applyAccentColor() {
@@ -792,22 +824,23 @@ void AppModel::setShowTranslation(bool show) {
     }
 }
 
-void AppModel::setLyricsActiveWordColor(const QString& c) { m_lyricsActiveWordColor = c; emit lyricsActiveWordColorChanged(); saveState(); }
-void AppModel::setLyricsActiveLineColor(const QString& c) { m_lyricsActiveLineColor = c; emit lyricsActiveLineColorChanged(); saveState(); }
-void AppModel::setLyricsInactiveColor(const QString& c) { m_lyricsInactiveColor = c; emit lyricsInactiveColorChanged(); saveState(); }
-void AppModel::setLyricsOpacity(int v) { m_lyricsOpacity = v; emit lyricsOpacityChanged(); saveState(); }
-void AppModel::setLyricsBgColor(const QString& c) { m_lyricsBgColor = c; emit lyricsBgColorChanged(); saveState(); }
-void AppModel::setBackgroundOverlay(int v) { m_backgroundOverlay = v; emit backgroundOverlayChanged(); saveState(); }
-void AppModel::setCrossfade(bool v) { m_crossfade = v; emit crossfadeChanged(); saveState(); }
-void AppModel::setCrossfadeDuration(int d) { m_crossfadeDuration = d; emit crossfadeDurationChanged(); saveState(); }
-void AppModel::setAccentColor(const QString& c) { m_accentColor = c; emit accentColorChanged(); saveState(); }
-void AppModel::setPlayMode(const QString& mode) { m_playMode = mode; emit playModeChanged(); saveState(); }
-void AppModel::setCurrentView(const QString& view) { m_currentView = view; emit currentViewChanged(); }
-void AppModel::setPlaylistOpen(bool open) { m_playlistOpen = open; emit playlistOpenChanged(); }
-void AppModel::setActiveCategoryId(const QString& id) { m_activeCategoryId = id; emit activeCategoryIdChanged(); }
-void AppModel::setLibraryFilter(const QString& f) { m_libraryFilter = f; emit libraryFilterChanged(); }
-void AppModel::setLibrarySearch(const QString& s) { m_librarySearch = s; emit librarySearchChanged(); }
-void AppModel::setBackgroundImage(const QString& p) { m_backgroundImage = p; emit backgroundImageChanged(); }
+void AppModel::setLyricsActiveWordColor(const QString& c) { if (m_lyricsActiveWordColor == c) return; m_lyricsActiveWordColor = c; emit lyricsActiveWordColorChanged(); saveState(); }
+void AppModel::setLyricsActiveLineColor(const QString& c) { if (m_lyricsActiveLineColor == c) return; m_lyricsActiveLineColor = c; emit lyricsActiveLineColorChanged(); saveState(); }
+void AppModel::setLyricsInactiveColor(const QString& c) { if (m_lyricsInactiveColor == c) return; m_lyricsInactiveColor = c; emit lyricsInactiveColorChanged(); saveState(); }
+void AppModel::setLyricsOpacity(int v) { v = std::max(0, std::min(100, v)); if (m_lyricsOpacity == v) return; m_lyricsOpacity = v; emit lyricsOpacityChanged(); saveState(); }
+void AppModel::setLyricsBgColor(const QString& c) { if (m_lyricsBgColor == c) return; m_lyricsBgColor = c; emit lyricsBgColorChanged(); saveState(); }
+void AppModel::setBackgroundOverlay(int v) { v = std::max(0, std::min(100, v)); if (m_backgroundOverlay == v) return; m_backgroundOverlay = v; emit backgroundOverlayChanged(); saveState(); }
+void AppModel::setCrossfade(bool v) { if (m_crossfade == v) return; m_crossfade = v; emit crossfadeChanged(); saveState(); }
+void AppModel::setCrossfadeDuration(int d) { d = std::max(1, std::min(10, d)); if (m_crossfadeDuration == d) return; m_crossfadeDuration = d; emit crossfadeDurationChanged(); saveState(); }
+void AppModel::setResumePlayback(bool v) { if (m_resumePlayback == v) return; m_resumePlayback = v; emit resumePlaybackChanged(); saveState(); }
+void AppModel::setAccentColor(const QString& c) { if (m_accentColor == c) return; m_accentColor = c; emit accentColorChanged(); saveState(); }
+void AppModel::setPlayMode(const QString& mode) { if (m_playMode == mode) return; m_playMode = mode; emit playModeChanged(); saveState(); }
+void AppModel::setCurrentView(const QString& view) { if (m_currentView == view) return; m_currentView = view; emit currentViewChanged(); }
+void AppModel::setPlaylistOpen(bool open) { if (m_playlistOpen == open) return; m_playlistOpen = open; emit playlistOpenChanged(); }
+void AppModel::setActiveCategoryId(const QString& id) { if (m_activeCategoryId == id) return; m_activeCategoryId = id; emit activeCategoryIdChanged(); }
+void AppModel::setLibraryFilter(const QString& f) { if (m_libraryFilter == f) return; m_libraryFilter = f; emit libraryFilterChanged(); }
+void AppModel::setLibrarySearch(const QString& s) { if (m_librarySearch == s) return; m_librarySearch = s; emit librarySearchChanged(); }
+void AppModel::setBackgroundImage(const QString& p) { if (m_backgroundImage == p) return; m_backgroundImage = p; emit backgroundImageChanged(); }
 
 // =====================================================================
 //  工具方法

@@ -13,9 +13,9 @@ Canvas {
     opacity: 0.6
     z: 0  // 放在最底层
 
-    // 每 50ms 刷新一次（由 AppModel 的频谱定时器驱动）
+    // 每 80ms 刷新一次（由 AppModel 的频谱定时器驱动）
     Timer {
-        interval: 50
+        interval: 80
         running: AppModel.playing && AppModel.visualizerMode === "2d"
         repeat: true
         onTriggered: canvas.requestPaint()
