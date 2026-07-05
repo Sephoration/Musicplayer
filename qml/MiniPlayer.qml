@@ -1,162 +1,99 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-
-// ============================================================
-//  迷你播放器 —— 紧凑型窗口，始终置顶
-//  只显示：封面图 + 歌名歌手 + 当前歌词 + 三个播放按钮 + 展开按钮
-//  整个窗口可拖拽
-// ============================================================
+import QtQuick.Window
 
 ApplicationWindow {
     id: miniWindow
     visible: AppModel.miniMode
-    width: 350
-    height: 70
+    width: 380
+    height: 78
+    minimumWidth: 320
+    minimumHeight: 72
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window
-    color: "#0a0a0ff2"
-
-    // 拖拽移动
-    MouseArea {
-        anchors.fill: parent
-        property point lastPos: Qt.point(0, 0)
-        onPressed: { lastPos = Qt.point(mouseX, mouseY) }
-        onPositionChanged: {
-            miniWindow.x += (mouseX - lastPos.x)
-            miniWindow.y += (mouseY - lastPos.y)
-        }
-    }
+    color: "transparent"
 
     Rectangle {
         anchors.fill: parent
-        color: "#14141ee6"
+        radius: 24
+        color: Qt.rgba(1, 1, 1, 0.90)
+        border.width: 1
+        border.color: Qt.rgba(0.10, 0.12, 0.18, 0.10)
+    }
 
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 8
-            spacing: 10
+    MouseArea {
+        anchors.fill: parent
+        onPressed: function(mouse) {
+            if (mouse.button === Qt.LeftButton) miniWindow.startSystemMove()
+        }
+    }
 
-            // 封面（带阴影）
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 10
+
+        Rectangle {
+            width: 50
+            height: 50
+            radius: 16
+            color: AppModel.accentColor || "#7c3aed"
+            Layout.alignment: Qt.AlignVCenter
+            clip: true
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.lighter(AppModel.accentColor || "#7c3aed", 1.24) }
+                GradientStop { position: 1.0; color: AppModel.accentColor || "#7c3aed" }
+            }
+            Image { anchors.fill: parent; source: AppModel.coverUrl || ""; fillMode: Image.PreserveAspectCrop; visible: source != "" }
+            Text { anchors.centerIn: parent; text: "♪"; color: Qt.rgba(1, 1, 1, 0.48); font.pixelSize: 20; visible: !(AppModel.coverUrl && AppModel.coverUrl !== "") }
+        }
+
+        Column {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.fillWidth: true
+            spacing: 3
+
+            Text {
+                text: AppModel.currentSongTitle || "未播放"
+                color: "#171b2a"
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                width: parent.width
+            }
+            Text {
+                text: {
+                    var st = AppModel.syncState
+                    if (st && st.hasLyrics && st.currentLine) return st.currentLine.text || "♪"
+                    return AppModel.currentSongArtist || "MusicPlayer"
+                }
+                color: "#667085"
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                width: parent.width
+            }
+        }
+
+        Row {
+            Layout.alignment: Qt.AlignVCenter
+            spacing: 6
+
+            ControlButton { text: "⏮"; size: 13; onClicked: AppModel.playPrev() }
+
             Rectangle {
-                id: miniCover
-                width: 45; height: 45; radius: 8
-                color: AppModel.accentColor || "#6366f1"
-                Layout.alignment: Qt.AlignVCenter
-                clip: true
-
-                Image {
-                    anchors.fill: parent
-                    source: AppModel.coverUrl || ""
-                    fillMode: Image.PreserveAspectCrop
-                    visible: source != ""
+                width: 36
+                height: 36
+                radius: 18
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.lighter(AppModel.accentColor || "#7c3aed", 1.28) }
+                    GradientStop { position: 1.0; color: AppModel.accentColor || "#7c3aed" }
                 }
+                Text { anchors.centerIn: parent; anchors.horizontalCenterOffset: AppModel.playing ? 0 : 1; text: AppModel.playing ? "⏸" : "▶"; color: "white"; font.pixelSize: 14; font.weight: Font.Bold }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: AppModel.requestPlay() }
             }
 
-            // 歌名 + 当前歌词
-            Column {
-                Layout.alignment: Qt.AlignVCenter
-                Layout.fillWidth: true
-                spacing: 2
-
-                Text {
-                    text: AppModel.currentSongTitle || "未播放"
-                    color: "#d9d9d9"
-                    font.pixelSize: 12
-                    font.weight: Font.Medium
-                    elide: Text.ElideRight
-                    width: parent.width
-                }
-                Text {
-                    text: {
-                        var st = AppModel.syncState
-                        if (st && st.hasLyrics && st.currentLine) {
-                            return st.currentLine.text || "♪"
-                        }
-                        return "♪"
-                    }
-                    color: "#737373"
-                    font.pixelSize: 11
-                    elide: Text.ElideRight
-                    width: parent.width
-                }
-            }
-
-            // 播放控制
-            Row {
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 8
-
-                // 上一首
-                Rectangle {
-                    width: 24; height: 24; radius: 4
-                    color: hovered ? "#ffffff10" : "transparent"
-                    property bool hovered: false
-                    Text {
-                        anchors.centerIn: parent
-                        text: "⏮"; color: "#ffffff88"; font.pixelSize: 12
-                    }
-                    MouseArea {
-                        anchors.fill: parent; hoverEnabled: true
-                        onEntered: parent.hovered = true
-                        onExited: parent.hovered = false
-                        onClicked: AppModel.playPrev()
-                    }
-                }
-
-                // 播放/暂停（渐变按钮）
-                Rectangle {
-                    id: miniPlayBtn
-                    width: 32; height: 32; radius: 16
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.lighter(AppModel.accentColor || "#6366f1", 1.3) }
-                        GradientStop { position: 1.0; color: AppModel.accentColor || "#6366f1" }
-                    }
-                    Text {
-                        anchors.centerIn: parent
-                        text: AppModel.playing ? "⏸" : "▶"
-                        color: "#ffffff"; font.pixelSize: 14
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: AppModel.requestPlay()
-                    }
-                }
-
-                // 下一首
-                Rectangle {
-                    width: 24; height: 24; radius: 4
-                    color: hovered ? "#ffffff10" : "transparent"
-                    property bool hovered: false
-                    Text {
-                        anchors.centerIn: parent
-                        text: "⏭"; color: "#ffffff88"; font.pixelSize: 12
-                    }
-                    MouseArea {
-                        anchors.fill: parent; hoverEnabled: true
-                        onEntered: parent.hovered = true
-                        onExited: parent.hovered = false
-                        onClicked: AppModel.playNext()
-                    }
-                }
-            }
-
-            // 展开按钮（退出迷你模式）
-            Rectangle {
-                width: 28; height: 28; radius: 4
-                color: hovered ? "#ffffff10" : "transparent"
-                border.width: 1; border.color: "#ffffff1a"
-                property bool hovered: false
-                Text {
-                    anchors.centerIn: parent
-                    text: "⤢"; color: "#ffffff80"; font.pixelSize: 14
-                }
-                MouseArea {
-                    anchors.fill: parent; hoverEnabled: true
-                    onEntered: parent.hovered = true
-                    onExited: parent.hovered = false
-                    onClicked: AppModel.setMiniMode(false)
-                }
-            }
+            ControlButton { text: "⏭"; size: 13; onClicked: AppModel.playNext() }
+            ControlButton { text: "⤢"; size: 13; onClicked: AppModel.setMiniMode(false) }
         }
     }
 }

@@ -1,34 +1,34 @@
 import QtQuick
 
-// ============================================================
-//  通用控制按钮 —— 带 hover 效果的图标按钮
-// ============================================================
-
 Rectangle {
     id: root
     property string text: ""
     property int size: 14
+    property bool hovered: false
 
     signal clicked()
 
-    width: 30; height: 30; radius: 6
-    color: hovered ? "#ffffff10" : "transparent"
-
-    property bool hovered: false
+    width: 34
+    height: 34
+    radius: 12
+    color: hovered ? Qt.rgba(0.10, 0.12, 0.18, 0.08) : Qt.rgba(1, 1, 1, 0.62)
+    border.width: 1
+    border.color: hovered ? Qt.rgba(0.10, 0.12, 0.18, 0.12) : Qt.rgba(0.10, 0.12, 0.18, 0.07)
 
     Text {
         anchors.centerIn: parent
         text: root.text
-        color: "#ffffff88"
+        color: hovered ? "#151927" : "#596174"
         font.pixelSize: root.size
+        font.weight: Font.Medium
     }
 
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         hoverEnabled: true
-        onEntered: parent.hovered = true
-        onExited: parent.hovered = false
+        onEntered: root.hovered = true
+        onExited: root.hovered = false
         onClicked: root.clicked()
     }
 }

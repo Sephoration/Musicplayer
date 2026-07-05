@@ -2,19 +2,18 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// 设置页面行：标签 + 控件
 RowLayout {
     property string label: ""
     property alias controlItem: controlContainer.children
 
     spacing: 12
-    height: 32
+    height: 34
 
     Text {
         text: label
-        color: "#aaaaaa"
+        color: "#475467"
         font.pixelSize: 12
-        Layout.preferredWidth: 100
+        Layout.preferredWidth: 110
         Layout.alignment: Qt.AlignVCenter
     }
 

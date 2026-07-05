@@ -1,25 +1,22 @@
 import QtQuick
 
-// ============================================================
-//  窗口控制按钮 —— 最小化/最大化/关闭
-// ============================================================
-
 Rectangle {
     id: root
     property string btnText: ""
     property bool isClose: false
+    property bool hovered: false
 
     signal clicked()
 
-    width: 32; height: 28; radius: 6
-    color: hovered ? (isClose ? "#ee444433" : "#ffffff15") : "transparent"
-
-    property bool hovered: false
+    width: 32
+    height: 28
+    radius: 9
+    color: hovered ? (isClose ? Qt.rgba(0.94, 0.27, 0.27, 0.12) : Qt.rgba(0.10, 0.12, 0.18, 0.08)) : "transparent"
 
     Text {
         anchors.centerIn: parent
         text: btnText
-        color: isClose && hovered ? "#ff6666" : "#ffffff99"
+        color: isClose && hovered ? "#dc2626" : "#6b7280"
         font.pixelSize: 14
     }
 

@@ -2,128 +2,87 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// ============================================================
-//  媒体库侧栏 —— 左侧分类列表
-//  系统分类（全部音乐、我喜欢、最近播放）+ 用户自建分类
-// ============================================================
-
 Rectangle {
     id: sidebar
-    color: "#0d0d18"
+    radius: 28
+    color: Qt.rgba(1, 1, 1, 0.72)
+    border.width: 1
+    border.color: Qt.rgba(0.10, 0.12, 0.18, 0.08)
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 0
+        anchors.margins: 14
+        spacing: 10
 
-        // 标题
-        Rectangle {
+        Column {
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            color: "transparent"
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-                text: "音乐库"
-                color: "#ffffff88"
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-            }
+            spacing: 3
+            Text { text: "分类"; color: "#171b2a"; font.pixelSize: 18; font.weight: Font.Bold }
+            Text { text: "整理你的声音收藏"; color: "#667085"; font.pixelSize: 11 }
         }
 
-        // 分类列表
         ListView {
             id: catList
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
             model: AppModel.categories
-            spacing: 2
+            spacing: 6
 
             delegate: Rectangle {
-                width: catList.width - 16
-                height: 36
-                radius: 8
-                anchors.horizontalCenter: parent.horizontalCenter
-                color: AppModel.activeCategoryId === modelData.id ? "#1a1a33" : "transparent"
+                width: catList.width
+                height: 42
+                radius: 15
+                color: AppModel.activeCategoryId === modelData.id ? Qt.rgba(0.10, 0.12, 0.18, 0.075) : (hovered ? Qt.rgba(0.10, 0.12, 0.18, 0.045) : "transparent")
+                border.width: AppModel.activeCategoryId === modelData.id ? 1 : 0
+                border.color: Qt.rgba(0.10, 0.12, 0.18, 0.07)
 
                 property bool hovered: false
                 property var catData: modelData
 
+                Rectangle { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; width: 3; height: 18; radius: 2; color: AppModel.activeCategoryId === catData.id ? mainWindow.accentColor : "transparent" }
+
                 Row {
                     anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 12
                     spacing: 10
 
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: catData.icon || "🎵"
-                        font.pixelSize: 14
-                    }
-
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: catData.icon || "🎵"; font.pixelSize: 15 }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: catData.name || ""
-                        color: AppModel.activeCategoryId === catData.id ? "#d9d9d9" : "#999999"
+                        color: AppModel.activeCategoryId === catData.id ? "#171b2a" : "#475467"
                         font.pixelSize: 13
+                        font.weight: AppModel.activeCategoryId === catData.id ? Font.DemiBold : Font.Normal
                         elide: Text.ElideRight
-                        width: parent.width - 60
+                        width: parent.width - 72
                     }
-
-                    // 歌曲数量
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: catData.songIds ? catData.songIds.length : "0"
-                        color: "#555555"
-                        font.pixelSize: 11
-                    }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: catData.songIds ? catData.songIds.length : "0"; color: "#98a2b3"; font.pixelSize: 11 }
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onEntered: parent.hovered = true
-                    onExited: parent.hovered = false
-                    onClicked: AppModel.setActiveCategoryId(catData.id)
-                }
+                MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onEntered: parent.hovered = true; onExited: parent.hovered = false; onClicked: AppModel.setActiveCategoryId(catData.id) }
             }
         }
 
-        // 底部：新建分类按钮
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            color: "transparent"
-
-            Rectangle {
-                anchors.centerIn: parent
-                width: parent.width - 16; height: 32; radius: 8
-                color: hovered ? "#ffffff10" : "transparent"
-                border.width: 1; border.color: "#ffffff0f"
-
-                property bool hovered: false
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "+ 新建分类"
-                    color: "#888888"
-                    font.pixelSize: 12
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onEntered: parent.hovered = true
-                    onExited: parent.hovered = false
-                    onClicked: {
-                        // 弹出命名对话框，简化处理直接用默认名
-                        var name = "新分类"
-                        var icons = ["🎵","🎸","🎹","🎧","💿","📀","🎼"]
-                        var icon = icons[Math.floor(Math.random() * icons.length)]
-                        AppModel.createCategory(name, icon)
-                    }
+            Layout.preferredHeight: 38
+            radius: 15
+            color: addMouse.containsMouse ? Qt.rgba(0.10, 0.12, 0.18, 0.08) : Qt.rgba(1, 1, 1, 0.62)
+            border.width: 1
+            border.color: Qt.rgba(0.10, 0.12, 0.18, 0.08)
+            Text { anchors.centerIn: parent; text: "+ 新建分类"; color: "#475467"; font.pixelSize: 12; font.weight: Font.Medium }
+            MouseArea {
+                id: addMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    var name = "新分类"
+                    var icons = ["🎵","🎸","🎹","🎧","💿","📀","🎼"]
+                    var icon = icons[Math.floor(Math.random() * icons.length)]
+                    AppModel.createCategory(name, icon)
                 }
             }
         }

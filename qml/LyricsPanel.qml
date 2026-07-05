@@ -1,17 +1,9 @@
 import QtQuick
 import QtQuick.Layouts
 
-// ============================================================
-//  歌词面板 —— 核心展示区
-//  上半部分：封面图（圆形）+ 歌曲标题/歌手
-//  下半部分：歌词逐句滚动 + 逐字高亮（卡拉OK风格）
-//  背景采用多层半透明叠加 + 发光边框，实现通透的玻璃质感
-// ============================================================
-
 Item {
     id: root
 
-    // 从 AppModel 读取同步状态
     property var syncState: AppModel.syncState
     property var currentLine: syncState ? syncState.currentLine : null
     property var lines: syncState ? syncState.lines : []
@@ -20,7 +12,6 @@ Item {
     property real wordProgress: syncState ? (syncState.wordProgress || 0) : 0
     property bool hasLyrics: syncState ? (syncState.hasLyrics || false) : false
 
-    // 同步状态发生变化时自动刷新
     Connections {
         target: AppModel
         function onSyncStateChanged() {
@@ -34,271 +25,174 @@ Item {
         }
     }
 
-    // =====================================================
-    //  无歌词状态：显示封面 + 歌名 + 暂无歌词
-    // =====================================================
-    Item {
-        id: noLyricsWrapper
-        anchors.centerIn: parent
-        width: Math.min(parent.width * 0.65, 560)
-        height: noLyricsCol.implicitHeight + 100
-        visible: !hasLyrics && AppModel.currentSongTitle !== ""
+    Rectangle {
+        anchors.fill: parent
+        radius: 34
+        color: Qt.rgba(1, 1, 1, 0.76)
+        border.width: 1
+        border.color: Qt.rgba(0.10, 0.12, 0.18, 0.08)
+    }
 
-        // ---- 玻璃背景层 ----
-        // 亮色基底（微弱的白，形成半透明玻璃感）
-        Rectangle {
-            anchors.fill: parent
-            radius: 18
-            color: Qt.rgba(1, 1, 1, 0.04 + AppModel.lyricsOpacity / 100 * 0.08)
-        }
-
-        // 边框光晕
-        Rectangle {
-            anchors.fill: parent
-            radius: 18
-            color: "transparent"
-            border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.06)
-        }
-
-        // 顶部高光（模拟环境光反射）
-        Rectangle {
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * 0.7
-            height: parent.height * 0.5
-            radius: width / 2
-            gradient: Gradient {
-                orientation: Gradient.Vertical
-                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.04) }
-                GradientStop { position: 1.0; color: "transparent" }
-            }
-        }
-
-        // ---- 内容 ----
-        Column {
-            id: noLyricsCol
-            anchors.centerIn: parent
-            spacing: 10
-            width: parent.width - 88
-
-            // 封面圆圈（带发光阴影）
-            Rectangle {
-                id: coverNoLyrics
-                width: 130; height: 130; radius: 65
-                color: mainWindow.accentColor
-                anchors.horizontalCenter: parent.horizontalCenter
-                clip: true
-
-                Image {
-                    anchors.fill: parent
-                    source: AppModel.coverUrl || ""
-                    fillMode: Image.PreserveAspectCrop
-                    visible: source != ""
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: "♪"
-                    color: "#ffffff4d"
-                    font.pixelSize: 36
-                    visible: !(AppModel.coverUrl && AppModel.coverUrl !== "")
-                }
-            }
-
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: AppModel.currentSongTitle || "未播放"
-                color: "#f0f0f0"
-                font.pixelSize: 20
-                font.weight: Font.SemiBold
-            }
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: AppModel.currentSongArtist || ""
-                color: "#999999"
-                font.pixelSize: 12
-            }
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "暂无歌词"
-                color: "#888888"
-                font.pixelSize: 12
-                topPadding: 20
-            }
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: parent.height * 0.52
+        radius: 34
+        gradient: Gradient {
+            orientation: Gradient.Vertical
+            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.72) }
+            GradientStop { position: 1.0; color: "transparent" }
         }
     }
 
-    // =====================================================
-    //  有歌词状态 — 玻璃面板 + 逐字高亮
-    // =====================================================
-    Item {
-        id: lyricsWrapper
+    Rectangle {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: 44
+        anchors.topMargin: 28
+        width: 170
+        height: 170
+        radius: 85
+        color: Qt.rgba(0.49, 0.23, 0.93, 0.08)
+    }
+
+    Column {
         anchors.centerIn: parent
-        width: Math.min(parent.width * 0.65, 560)
-        height: lyricsCol.implicitHeight + 100
-        visible: hasLyrics
+        width: Math.min(parent.width - 96, 620)
+        spacing: 18
 
-        // ---- 玻璃背景层 ----
         Rectangle {
-            anchors.fill: parent
-            radius: 18
-            color: Qt.rgba(1, 1, 1, 0.04 + AppModel.lyricsOpacity / 100 * 0.08)
-        }
-
-        // 边框光晕
-        Rectangle {
-            anchors.fill: parent
-            radius: 18
-            color: "transparent"
-            border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.06)
-        }
-
-        // 顶部高光
-        Rectangle {
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * 0.7
-            height: parent.height * 0.5
+            width: hasLyrics ? 124 : 156
+            height: width
             radius: width / 2
-            gradient: Gradient {
-                orientation: Gradient.Vertical
-                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.06 + AppModel.lyricsOpacity / 100 * 0.04) }
-                GradientStop { position: 1.0; color: "transparent" }
-            }
-        }
+            anchors.horizontalCenter: parent.horizontalCenter
+            color: mainWindow.accentColor
+            border.width: 8
+            border.color: Qt.rgba(1, 1, 1, 0.72)
+            clip: true
 
-        // ---- 内容 ----
-        Column {
-            id: lyricsCol
-            anchors.centerIn: parent
-            spacing: 6
-            width: parent.width - 88
-
-            // 歌名 + 歌手
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: AppModel.currentSongTitle || ""
-                color: "#f0f0f0"
-                font.pixelSize: 20
-                font.weight: Font.SemiBold
-            }
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: AppModel.currentSongArtist || ""
-                color: "#999999"
-                font.pixelSize: 12
-            }
-
-            // 封面（小圆图）
             Rectangle {
-                id: coverLyrics
-                width: 100; height: 100; radius: 50
-                color: mainWindow.accentColor
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.topMargin: 12
-                clip: true
-
-                Image {
-                    anchors.fill: parent
-                    source: AppModel.coverUrl || ""
-                    fillMode: Image.PreserveAspectCrop
-                    visible: source != ""
+                anchors.fill: parent
+                radius: parent.radius
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.lighter(mainWindow.accentColor, 1.28) }
+                    GradientStop { position: 1.0; color: Qt.darker(mainWindow.accentColor, 1.10) }
                 }
             }
 
-            // 歌词行显示区
-            Item {
+            Image { anchors.fill: parent; source: AppModel.coverUrl || ""; fillMode: Image.PreserveAspectCrop; visible: source != "" }
+            Text { anchors.centerIn: parent; text: "♪"; color: Qt.rgba(1, 1, 1, 0.48); font.pixelSize: hasLyrics ? 40 : 52; font.weight: Font.Bold; visible: !(AppModel.coverUrl && AppModel.coverUrl !== "") }
+        }
+
+        Column {
+            width: parent.width
+            spacing: 5
+
+            Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: parent.width
-                height: lyricsArea.implicitHeight
-                anchors.topMargin: 16
+                horizontalAlignment: Text.AlignHCenter
+                text: AppModel.currentSongTitle || "未选择歌曲"
+                color: "#171b2a"
+                font.pixelSize: 25
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
 
-                Column {
-                    id: lyricsArea
-                    width: parent.width
-                    spacing: 8
-                    anchors.horizontalCenter: parent.horizontalCenter
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: AppModel.currentSongArtist || "准备好播放你的音乐"
+                color: "#667085"
+                font.pixelSize: 13
+                elide: Text.ElideRight
+            }
+        }
 
-                    Repeater {
-                        model: {
-                            var result = []
-                            if (!lines || lines.length === 0) return result
-                            var start = Math.max(0, currentLineIndex - 2)
-                            var end = Math.min(lines.length, currentLineIndex + 3)
-                            for (var i = start; i < end; i++) {
-                                result.push({ line: lines[i], idx: i, isCurrent: i === currentLineIndex })
-                            }
-                            return result
-                        }
+        Item {
+            width: parent.width
+            height: hasLyrics ? lyricsArea.implicitHeight : 96
 
-                        delegate: Item {
-                            width: lyricsArea.width
-                            height: lineContent.implicitHeight + 4
+            Text {
+                anchors.centerIn: parent
+                text: AppModel.currentSongTitle === "" ? "从媒体库导入歌曲后开始播放" : "暂无歌词"
+                color: "#667085"
+                font.pixelSize: 14
+                visible: !hasLyrics
+            }
 
-                            property bool isCurrentLine: modelData.isCurrent
-                            property var lineData: modelData.line
-                            property int lineIdx: modelData.idx
+            Column {
+                id: lyricsArea
+                width: parent.width
+                spacing: 10
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: hasLyrics
 
-                            Column {
-                                id: lineContent
+                Repeater {
+                    model: {
+                        var result = []
+                        if (!lines || lines.length === 0) return result
+                        var start = Math.max(0, currentLineIndex - 2)
+                        var end = Math.min(lines.length, currentLineIndex + 3)
+                        for (var i = start; i < end; i++) result.push({ line: lines[i], idx: i, isCurrent: i === currentLineIndex })
+                        return result
+                    }
+
+                    delegate: Item {
+                        width: lyricsArea.width
+                        height: lineContent.implicitHeight + 4
+                        property bool isCurrentLine: modelData.isCurrent
+                        property var lineData: modelData.line
+
+                        Column {
+                            id: lineContent
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: parent.width
+                            spacing: 4
+
+                            Rectangle {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                width: parent.width
+                                width: Math.min(lyricRow.implicitWidth + 28, parent.width)
+                                height: lyricRow.implicitHeight + 12
+                                radius: 14
+                                color: isCurrentLine ? Qt.rgba(0.10, 0.12, 0.18, 0.06) : "transparent"
+                                border.width: isCurrentLine ? 1 : 0
+                                border.color: Qt.rgba(0.10, 0.12, 0.18, 0.07)
 
-                                // 歌词文字行
-                                Rectangle {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    width: lyricRow.implicitWidth + 16
-                                    height: lyricRow.implicitHeight + 6
-                                    radius: 8
-                                    color: isCurrentLine ? Qt.rgba(1, 1, 1, 0.04 + AppModel.lyricsOpacity / 100 * 0.06) : "transparent"
+                                Row {
+                                    id: lyricRow
+                                    anchors.centerIn: parent
+                                    spacing: 0
+                                    property var words: lineData ? (lineData.words || []) : []
+                                    property bool showWords: isCurrentLine && words.length > 0
 
-                                    Row {
-                                        id: lyricRow
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        spacing: 0
-
-                                        property var words: lineData ? (lineData.words || []) : []
-                                        property bool showWords: isCurrentLine && words.length > 0
-
-                                        Repeater {
-                                            model: lyricRow.showWords ? lyricRow.words : [lineData ? (lineData.text || " ") : " "]
-                                            Text {
-                                                text: {
-                                                    if (lyricRow.showWords) {
-                                                        return (modelData.word || "") + " "
-                                                    } else {
-                                                        return lineData ? (lineData.text || " ") : " "
-                                                    }
-                                                }
-                                                font.pixelSize: AppModel.fontSize
-                                                font.letterSpacing: 1
-                                                color: {
-                                                    if (!lyricRow.showWords) {
-                                                        return isCurrentLine
-                                                               ? AppModel.lyricsActiveLineColor
-                                                               : AppModel.lyricsInactiveColor
-                                                    }
-                                                    return (index <= currentWordIndex)
-                                                           ? AppModel.lyricsActiveWordColor
-                                                           : AppModel.lyricsActiveLineColor
-                                                }
-                                                property bool isActiveWord: lyricRow.showWords && index <= currentWordIndex
+                                    Repeater {
+                                        model: lyricRow.showWords ? lyricRow.words : [lineData ? (lineData.text || " ") : " "]
+                                        Text {
+                                            text: lyricRow.showWords ? (modelData.word || "") + " " : (lineData ? (lineData.text || " ") : " ")
+                                            font.pixelSize: isCurrentLine ? AppModel.fontSize + 2 : AppModel.fontSize - 1
+                                            font.weight: isCurrentLine ? Font.DemiBold : Font.Normal
+                                            font.letterSpacing: isCurrentLine ? 1.2 : 0.6
+                                            color: {
+                                                if (!lyricRow.showWords) return isCurrentLine ? "#171b2a" : "#8a94a8"
+                                                return index <= currentWordIndex ? mainWindow.accentColor : "#171b2a"
                                             }
+                                            opacity: isCurrentLine ? 1.0 : 0.58
                                         }
                                     }
                                 }
+                            }
 
-                                // 翻译
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: (lineData && lineData.translation) || ""
-                                    visible: text !== "" && isCurrentLine && AppModel.showTranslation
-                                    color: AppModel.lyricsInactiveColor
-                                    font.pixelSize: AppModel.fontSize - 2
-                                    font.italic: true
-                                    topPadding: 4
-                                }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: (lineData && lineData.translation) || ""
+                                visible: text !== "" && isCurrentLine && AppModel.showTranslation
+                                color: "#667085"
+                                font.pixelSize: AppModel.fontSize - 2
+                                font.italic: true
+                                opacity: 0.78
                             }
                         }
                     }
