@@ -154,23 +154,30 @@ public:
     void recordPlay(int songId, QVector<int>& recentPlays, QVector<SongInfo>& songs);
 
     // Lyrics & cover import
-    void importLyrics(int songId, const QString& content,
+    bool importLyrics(int songId, const QString& content,
                       QVector<SongInfo>& songs);
-    void importCover(int songId, const QString& imagePath,
+    bool importCover(int songId, const QString& imagePath,
                      QVector<SongInfo>& songs);
 
     // Background image
     QString setBackgroundImage(const QString& sourcePath);
     void clearBackgroundImage();
 
+    bool indexValid() const { return m_indexValid; }
+
+signals:
+    void storageError(const QString& message);
+
+public:
     // Metadata reading (using QMediaPlayer)
     static void readMetadata(const QString& filePath, QString& title, QString& artist,
                              QString& album, int& durationSec);
 
 private:
     QString m_basePath;
+    bool m_indexValid = true;
 
-    bool importLyricsFromSource(const QString& srcPath, const QString& stem);
+    bool importLyricsFromSource(const QString& srcPath, const QString& sourceStem, const QString& targetStem);
     bool importCoverFromSource(const QString& srcPath, const QString& stem, int songId);
     SongInfo importSongInternal(const QString& sourcePath, QVector<SongInfo>& songs);
 };

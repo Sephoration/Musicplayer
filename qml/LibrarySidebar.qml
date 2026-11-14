@@ -9,6 +9,44 @@ Rectangle {
     border.width: 1
     border.color: Qt.rgba(0.10, 0.12, 0.18, 0.08)
 
+    Menu {
+        id: categoryMenu
+        property string categoryId: ""
+        property string categoryName: ""
+        MenuItem {
+            text: "重命名"
+            onTriggered: {
+                categoryDialog.editingId = categoryMenu.categoryId
+                categoryName.text = categoryMenu.categoryName
+                categoryDialog.open()
+            }
+        }
+        MenuItem { text: "删除分类…"; onTriggered: deleteCategoryDialog.open() }
+    }
+    Dialog {
+        id: categoryDialog
+        property string editingId: ""
+        title: editingId ? "重命名分类" : "新建分类"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        TextField { id: categoryName; placeholderText: "分类名称"; selectByMouse: true; maximumLength: 60 }
+        onOpened: categoryName.forceActiveFocus()
+        onAccepted: {
+            if (editingId) AppModel.renameCategory(editingId, categoryName.text)
+            else AppModel.createCategory(categoryName.text, "♪")
+        }
+    }
+    Dialog {
+        id: deleteCategoryDialog
+        title: "删除分类？"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label { text: "只删除分类，不会删除音乐文件。" }
+        onAccepted: AppModel.deleteCategory(categoryMenu.categoryId)
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
@@ -61,7 +99,21 @@ Rectangle {
                     Text { anchors.verticalCenter: parent.verticalCenter; text: catData.songIds ? catData.songIds.length : "0"; color: "#98a2b3"; font.pixelSize: 11 }
                 }
 
-                MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onEntered: parent.hovered = true; onExited: parent.hovered = false; onClicked: AppModel.setActiveCategoryId(catData.id) }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onEntered: parent.hovered = true
+                    onExited: parent.hovered = false
+                    onClicked: function(mouse) {
+                        if (mouse.button === Qt.RightButton && catData.id !== "all" && catData.id !== "favorites" && catData.id !== "recent") {
+                            categoryMenu.categoryId = catData.id
+                            categoryMenu.categoryName = catData.name
+                            categoryMenu.popup()
+                        } else if (mouse.button === Qt.LeftButton) AppModel.setActiveCategoryId(catData.id)
+                    }
+                }
             }
         }
 
@@ -79,10 +131,9 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    var name = "新分类"
-                    var icons = ["🎵","🎸","🎹","🎧","💿","📀","🎼"]
-                    var icon = icons[Math.floor(Math.random() * icons.length)]
-                    AppModel.createCategory(name, icon)
+                    categoryDialog.editingId = ""
+                    categoryName.text = ""
+                    categoryDialog.open()
                 }
             }
         }

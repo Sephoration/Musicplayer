@@ -12,7 +12,7 @@ void Settings::setPlayMode(const QString& mode) { m_settings.setValue("player/pl
 QString Settings::visualizerColor() const { return m_settings.value("visual/color", "#6366f1").toString(); }
 void Settings::setVisualizerColor(const QString& c) { m_settings.setValue("visual/color", c); }
 
-QString Settings::visualizerMode() const { return m_settings.value("visual/mode", "2d").toString(); }
+QString Settings::visualizerMode() const { return m_settings.value("visual/mode", "off").toString(); }
 void Settings::setVisualizerMode(const QString& m) { m_settings.setValue("visual/mode", m); }
 
 int Settings::fontSize() const { return m_settings.value("lyrics/fontSize", 15).toInt(); }
@@ -60,7 +60,7 @@ void Settings::setCrossfade(bool v) { m_settings.setValue("player/crossfade", v)
 int Settings::crossfadeDuration() const { return m_settings.value("player/crossfadeDuration", 2).toInt(); }
 void Settings::setCrossfadeDuration(int d) { m_settings.setValue("player/crossfadeDuration", d); }
 
-QString Settings::accentColor() const { return m_settings.value("theme/accentColor", "#6366f1").toString(); }
+QString Settings::accentColor() const { return m_settings.value("theme/accentColor", "#39796b").toString(); }
 void Settings::setAccentColor(const QString& c) { m_settings.setValue("theme/accentColor", c); }
 
 QVariantList Settings::savedQueue() const {

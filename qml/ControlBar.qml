@@ -68,18 +68,11 @@ Rectangle {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: function(mouse) { AppModel.seek(mouse.x / parent.width * AppModel.duration) }
+                    onPressed: function(mouse) { AppModel.seek(Math.max(0, Math.min(1, mouse.x / width)) * AppModel.duration) }
+                    onPositionChanged: function(mouse) { if (pressed) AppModel.seek(Math.max(0, Math.min(1, mouse.x / width)) * AppModel.duration) }
                 }
 
-                DragHandler {
-                    target: null
-                    onActiveChanged: {
-                        if (active) {
-                            var pct = centroid.position.x / parent.width
-                            AppModel.seek(Math.max(0, Math.min(1, pct)) * AppModel.duration)
-                        }
-                    }
-                }
+
             }
 
             Text {
@@ -112,7 +105,7 @@ Rectangle {
                         GradientStop { position: 0.0; color: Qt.lighter(mainWindow.accentColor, 1.25) }
                         GradientStop { position: 1.0; color: Qt.darker(mainWindow.accentColor, 1.08) }
                     }
-                    Image { anchors.fill: parent; source: AppModel.coverUrl || ""; fillMode: Image.PreserveAspectCrop; visible: source != "" }
+                    Image { anchors.fill: parent; source: AppModel.coverUrl || ""; cache: false; fillMode: Image.PreserveAspectCrop; visible: source != "" }
                     Text { anchors.centerIn: parent; text: "♪"; color: Qt.rgba(1, 1, 1, 0.48); font.pixelSize: 20; visible: !(AppModel.coverUrl && AppModel.coverUrl !== "") }
                 }
 
@@ -147,7 +140,7 @@ Rectangle {
                     anchors.centerIn: parent
                     spacing: 14
 
-                    ControlButton { text: "→"; size: 17; anchors.verticalCenter: parent.verticalCenter; onClicked: AppModel.togglePlayMode() }
+                    ControlButton { text: AppModel.playMode === "repeat" ? "↻¹" : (AppModel.playMode === "shuffle" ? "⤨" : "→"); size: 17; anchors.verticalCenter: parent.verticalCenter; onClicked: AppModel.togglePlayMode() }
                     ControlButton { text: "⏮"; size: 18; anchors.verticalCenter: parent.verticalCenter; onClicked: AppModel.playPrev() }
 
                     Rectangle {

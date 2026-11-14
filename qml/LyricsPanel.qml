@@ -7,8 +7,8 @@ Item {
     property var syncState: AppModel.syncState
     property var currentLine: syncState ? syncState.currentLine : null
     property var lines: syncState ? syncState.lines : []
-    property int currentLineIndex: syncState ? (syncState.currentLineIndex || -1) : -1
-    property int currentWordIndex: syncState ? (syncState.currentWordIndex || -1) : -1
+    property int currentLineIndex: syncState ? (syncState.currentLineIndex !== undefined ? syncState.currentLineIndex : -1) : -1
+    property int currentWordIndex: syncState ? (syncState.currentWordIndex !== undefined ? syncState.currentWordIndex : -1) : -1
     property real wordProgress: syncState ? (syncState.wordProgress || 0) : 0
     property bool hasLyrics: syncState ? (syncState.hasLyrics || false) : false
 
@@ -18,8 +18,8 @@ Item {
             root.syncState = AppModel.syncState
             root.currentLine = root.syncState ? root.syncState.currentLine : null
             root.lines = root.syncState ? root.syncState.lines : []
-            root.currentLineIndex = root.syncState ? (root.syncState.currentLineIndex || -1) : -1
-            root.currentWordIndex = root.syncState ? (root.syncState.currentWordIndex || -1) : -1
+            root.currentLineIndex = root.syncState ? (root.syncState.currentLineIndex !== undefined ? root.syncState.currentLineIndex : -1) : -1
+            root.currentWordIndex = root.syncState ? (root.syncState.currentWordIndex !== undefined ? root.syncState.currentWordIndex : -1) : -1
             root.wordProgress = root.syncState ? (root.syncState.wordProgress || 0) : 0
             root.hasLyrics = root.syncState ? (root.syncState.hasLyrics || false) : false
         }
@@ -81,7 +81,7 @@ Item {
                 }
             }
 
-            Image { anchors.fill: parent; source: AppModel.coverUrl || ""; fillMode: Image.PreserveAspectCrop; visible: source != "" }
+            Image { anchors.fill: parent; source: AppModel.coverUrl || ""; cache: false; fillMode: Image.PreserveAspectCrop; visible: source != "" }
             Text { anchors.centerIn: parent; text: "♪"; color: Qt.rgba(1, 1, 1, 0.48); font.pixelSize: hasLyrics ? 40 : 52; font.weight: Font.Bold; visible: !(AppModel.coverUrl && AppModel.coverUrl !== "") }
         }
 

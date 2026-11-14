@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 Rectangle {
     id: content
@@ -9,6 +10,7 @@ Rectangle {
     border.width: 1
     border.color: Qt.rgba(0.10, 0.12, 0.18, 0.07)
 
+    property string sortMode: "default"
     property var filteredSongs: {
         var all = AppModel.songs || []
         var result = []
@@ -31,6 +33,10 @@ Rectangle {
             }
             result.push(song)
         }
+        if (sortMode === "title") result.sort(function(a, b) { return (a.title || "").localeCompare(b.title || "") })
+        else if (sortMode === "artist") result.sort(function(a, b) { return (a.artist || "").localeCompare(b.artist || "") || (a.title || "").localeCompare(b.title || "") })
+        else if (sortMode === "duration") result.sort(function(a, b) { return (a.durationSec || 0) - (b.durationSec || 0) })
+        else if (AppModel.activeCategoryId === "recent") result.sort(function(a, b) { return catSongs.indexOf(a.id) - catSongs.indexOf(b.id) })
         return result
     }
 
@@ -119,7 +125,7 @@ Rectangle {
                                 contextMenu.popup()
                             } else {
                                 AppModel.setCurrentView("player")
-                                AppModel.playSong(songData.id, songData.title, songData.artist)
+                                AppModel.replaceQueueAndPlay(content.filteredSongs, index)
                             }
                         }
                     }
@@ -136,6 +142,31 @@ Rectangle {
         }
     }
 
+    FileDialog {
+        id: lyricsDialog
+        title: "选择歌词文件"
+        nameFilters: ["LRC 歌词 (*.lrc)", "文本文件 (*.txt)"]
+        onAccepted: AppModel.importLyricsFile(contextMenu.songId, selectedFile.toString())
+    }
+    FileDialog {
+        id: coverDialog
+        title: "选择封面图片"
+        nameFilters: ["图片 (*.jpg *.jpeg *.png)"]
+        onAccepted: AppModel.importCover(contextMenu.songId, selectedFile.toString())
+    }
+    Dialog {
+        id: removeDialog
+        title: "从媒体库移除歌曲？"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label {
+            text: "将删除媒体库中的副本，原始文件不会受影响。"
+            wrapMode: Text.WordWrap
+        }
+        onAccepted: AppModel.deleteSong(contextMenu.songId)
+    }
+
     Menu {
         id: contextMenu
         property int songId: 0
@@ -145,7 +176,29 @@ Rectangle {
         MenuItem { text: "添加到播放队列"; onTriggered: AppModel.addToQueue(contextMenu.songId, contextMenu.songTitle, contextMenu.songArtist) }
         MenuItem { text: "下一首播放"; onTriggered: AppModel.addToPlayNext(contextMenu.songId, contextMenu.songTitle, contextMenu.songArtist) }
         MenuItem { text: "收藏 / 取消收藏"; onTriggered: AppModel.toggleFavorite(contextMenu.songId) }
+        MenuItem { text: "导入歌词…"; onTriggered: lyricsDialog.open() }
+        MenuItem { text: "更换封面…"; onTriggered: coverDialog.open() }
+        Menu {
+            id: addCategoryMenu
+            title: "添加到分类"
+            Instantiator {
+                model: (AppModel.categories || []).filter(function(c) { return c.id !== "all" && c.id !== "favorites" && c.id !== "recent" })
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name
+                    enabled: !(modelData.songIds || []).includes(contextMenu.songId)
+                    onTriggered: AppModel.addToCategory(modelData.id, contextMenu.songId)
+                }
+                onObjectAdded: function(index, object) { addCategoryMenu.insertItem(index, object) }
+                onObjectRemoved: function(index, object) { addCategoryMenu.removeItem(object) }
+            }
+        }
+        MenuItem {
+            text: "从当前分类移除"
+            visible: AppModel.activeCategoryId !== "all" && AppModel.activeCategoryId !== "favorites" && AppModel.activeCategoryId !== "recent"
+            onTriggered: AppModel.removeFromCategory(AppModel.activeCategoryId, contextMenu.songId)
+        }
         MenuSeparator {}
-        MenuItem { text: "删除"; onTriggered: AppModel.deleteSong(contextMenu.songId) }
+        MenuItem { text: "从媒体库移除…"; onTriggered: removeDialog.open() }
     }
 }

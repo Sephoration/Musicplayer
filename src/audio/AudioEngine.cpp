@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
-#include <QTimer>
+#include <QPropertyAnimation>
+#include <algorithm>
 
 AudioEngine::AudioEngine(QObject* parent) : QObject(parent) {
     m_player = new QMediaPlayer(this);
@@ -76,6 +77,7 @@ void AudioEngine::seek(double seconds) {
 }
 
 void AudioEngine::setVolume(int vol) {
+    if (m_fade) { m_fade->stop(); m_fade->deleteLater(); m_fade = nullptr; }
     m_volume = vol;
     if (m_muted) return;
     if (m_audioOutput)
@@ -83,6 +85,7 @@ void AudioEngine::setVolume(int vol) {
 }
 
 void AudioEngine::setMuted(bool muted) {
+    if (m_fade) { m_fade->stop(); m_fade->deleteLater(); m_fade = nullptr; }
     m_muted = muted;
     if (m_audioOutput)
         m_audioOutput->setVolume(muted ? 0 : std::max(0.0, std::min(1.0, m_volume / 100.0)));
@@ -90,38 +93,28 @@ void AudioEngine::setMuted(bool muted) {
 
 void AudioEngine::stop() {
     if (!m_player) return;
+    if (m_fade) { m_fade->stop(); m_fade->deleteLater(); m_fade = nullptr; }
     m_player->stop();
     m_player->setSource(QUrl());
     m_playing = false;
 }
 
 void AudioEngine::fadeOut(int durationMs) {
-    if (!m_audioOutput) return;
-    double startVol = m_audioOutput->volume();
-    int steps = 20;
-    int interval = durationMs / steps;
-    for (int i = 0; i < steps; i++) {
-        QTimer::singleShot(i * interval, this, [this, startVol, steps, i]() {
-            if (m_audioOutput) {
-                double frac = 1.0 - (i + 1.0) / steps;
-                m_audioOutput->setVolume(startVol * frac);
-            }
-        });
-    }
+    if (!m_audioOutput || m_muted) return;
+    if (m_fade) { m_fade->stop(); m_fade->deleteLater(); }
+    m_fade = new QPropertyAnimation(m_audioOutput, "volume", this);
+    m_fade->setDuration(durationMs);
+    m_fade->setStartValue(m_audioOutput->volume());
+    m_fade->setEndValue(0.0);
+    m_fade->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void AudioEngine::fadeIn(int durationMs, int targetVolume) {
-    if (!m_audioOutput) return;
-    double target = targetVolume / 100.0;
-    int steps = 20;
-    int interval = durationMs / steps;
-    m_audioOutput->setVolume(0);
-    for (int i = 0; i < steps; i++) {
-        QTimer::singleShot(i * interval, this, [this, target, steps, i]() {
-            if (m_audioOutput) {
-                double frac = (i + 1.0) / steps;
-                m_audioOutput->setVolume(target * frac);
-            }
-        });
-    }
+    if (!m_audioOutput || m_muted) return;
+    if (m_fade) { m_fade->stop(); m_fade->deleteLater(); }
+    m_fade = new QPropertyAnimation(m_audioOutput, "volume", this);
+    m_fade->setDuration(durationMs);
+    m_fade->setStartValue(0.0);
+    m_fade->setEndValue(std::clamp(targetVolume / 100.0, 0.0, 1.0));
+    m_fade->start(QAbstractAnimation::DeleteWhenStopped);
 }

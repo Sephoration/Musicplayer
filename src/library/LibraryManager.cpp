@@ -1,6 +1,7 @@
 #include "LibraryManager.h"
 #include <QDir>
 #include <QFile>
+#include <QSaveFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QDateTime>
@@ -11,6 +12,11 @@
 #include <QMediaMetaData>
 #include <QEventLoop>
 #include <QTimer>
+#include <QSet>
+#include <QDirIterator>
+#include <QUuid>
+#include <QCryptographicHash>
+#include <QImageReader>
 
 // ---- Path helpers ----
 
@@ -29,11 +35,34 @@ void LibraryManager::ensureDirs() {
 
 QVector<SongInfo> LibraryManager::loadIndex() {
     QFile f(metadataPath());
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    f.close();
+    m_indexValid = true;
+    if (!f.exists()) return {};
+    if (!f.open(QIODevice::ReadOnly)) {
+        m_indexValid = false;
+        emit storageError(QStringLiteral("无法读取媒体库索引：%1").arg(f.errorString()));
+        return {};
+    }
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject() || !doc.object().value("songs").isArray()) {
+        m_indexValid = false;
+        emit storageError(QStringLiteral("媒体库索引损坏，已停止写入以保护原数据"));
+        return {};
+    }
     QVector<SongInfo> songs;
-    QJsonArray arr = doc.object().value("songs").toArray();
+    const QJsonArray arr = doc.object().value("songs").toArray();
+    QSet<int> ids;
+    for (const QJsonValue& value : arr) {
+        const QJsonObject item = value.toObject();
+        const int id = item.value("id").toInt();
+        const QString name = item.value("filename").toString();
+        if (!value.isObject() || id <= 0 || ids.contains(id) || name.isEmpty() || name == "." || name == ".." || QFileInfo(name).fileName() != name || name.contains('/') || name.contains('\\')) {
+            m_indexValid = false;
+            emit storageError(QStringLiteral("媒体库索引包含无效记录，已停止写入以保护原数据"));
+            return {};
+        }
+        ids.insert(id);
+    }
     for (const QJsonValue& v : arr) {
         QJsonObject o = v.toObject();
         SongInfo s;
@@ -57,6 +86,7 @@ void LibraryManager::saveIndex(const QVector<SongInfo>& songs,
                                 const QVector<CategoryInfo>& categories,
                                 const QVector<int>& favorites,
                                 const QVector<int>& recentPlays) {
+    if (!m_indexValid) { emit storageError(QStringLiteral("媒体库索引不可用，未保存更改")); return; }
     QJsonObject root;
     QJsonArray songArr;
     for (const auto& s : songs) {
@@ -78,6 +108,8 @@ void LibraryManager::saveIndex(const QVector<SongInfo>& songs,
 
     QJsonArray catArr;
     for (const auto& c : categories) {
+        // Built-in views are rebuilt from the index, not user playlists.
+        if (c.id == "all" || c.id == "favorites" || c.id == "recent") continue;
         QJsonObject co;
         co["id"] = c.id;
         co["name"] = c.name;
@@ -97,68 +129,58 @@ void LibraryManager::saveIndex(const QVector<SongInfo>& songs,
     for (int id : recentPlays) recArr.append(id);
     root["recentPlays"] = recArr;
 
-    QFile f(metadataPath());
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-        f.close();
-    }
+    QSaveFile f(metadataPath());
+    const QByteArray data = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (!f.open(QIODevice::WriteOnly) || f.write(data) != data.size() || !f.commit())
+        emit storageError(QStringLiteral("媒体库保存失败：%1").arg(f.errorString()));
 }
 
 // ---- Metadata reading ----
 
 void LibraryManager::readMetadata(const QString& filePath, QString& title, QString& artist,
                                    QString& album, int& durationSec) {
-    // Use QMediaPlayer synchronously to read tags
-    QMediaPlayer* probe = new QMediaPlayer;
-    // We only need duration — tags are limited in QMediaPlayer
-    // Use file name as fallback
     QFileInfo fi(filePath);
     title = fi.completeBaseName();
     artist = QStringLiteral("未知艺术家");
     album = "-";
     durationSec = 0;
 
-    // 尝试通过 QMediaPlayer 获取时长（仅时长，不用 QMediaMetaData）
-    // Qt 6.11 中 QMediaMetaData API 变动大，元数据改用文件名解析
+    QMediaPlayer probe;
     QEventLoop loop;
     QTimer::singleShot(1200, &loop, &QEventLoop::quit);
-
-    QObject::connect(probe, &QMediaPlayer::durationChanged, probe, [&](qint64 dur) {
-        if (dur > 0) {
-            durationSec = static_cast<int>(dur / 1000);
-        }
+    QObject::connect(&probe, &QMediaPlayer::durationChanged, &loop, [&](qint64 dur) {
+        if (dur > 0) durationSec = static_cast<int>(dur / 1000);
     });
-
-    QObject::connect(probe, &QMediaPlayer::mediaStatusChanged, probe,
-        [&](QMediaPlayer::MediaStatus s) {
-            if (s == QMediaPlayer::LoadedMedia || s == QMediaPlayer::InvalidMedia)
-                loop.quit();
+    QObject::connect(&probe, &QMediaPlayer::mediaStatusChanged, &loop,
+        [&](QMediaPlayer::MediaStatus status) {
+            if (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::InvalidMedia) loop.quit();
         });
-
-    probe->setSource(QUrl::fromLocalFile(filePath));
-    loop.exec();
-
-    // 从文件名解析：尝试 "艺术家 - 标题" 格式
-    if (title.contains(" - ")) {
-        QStringList parts = title.split(" - ");
-        if (parts.size() >= 2) {
-            artist = parts[0].trimmed();
-            title = parts[1].trimmed();
-        }
+    probe.setSource(QUrl::fromLocalFile(filePath));
+    if (probe.mediaStatus() != QMediaPlayer::LoadedMedia && probe.mediaStatus() != QMediaPlayer::InvalidMedia)
+        loop.exec();
+    const QMediaMetaData metadata = probe.metaData();
+    const QString tagTitle = metadata.stringValue(QMediaMetaData::Title).trimmed();
+    const QString tagArtist = metadata.stringValue(QMediaMetaData::AlbumArtist).trimmed();
+    const QString tagAlbum = metadata.stringValue(QMediaMetaData::AlbumTitle).trimmed();
+    if (!tagTitle.isEmpty()) title = tagTitle;
+    if (!tagArtist.isEmpty()) artist = tagArtist;
+    if (!tagAlbum.isEmpty()) album = tagAlbum;
+    if (tagTitle.isEmpty() && title.contains(" - ")) {
+        const int separator = title.indexOf(" - ");
+        if (tagArtist.isEmpty()) artist = title.left(separator).trimmed();
+        title = title.mid(separator + 3).trimmed();
     }
-
-    probe->deleteLater();
 }
 
 // ---- Import ----
 
-bool LibraryManager::importLyricsFromSource(const QString& srcPath, const QString& stem) {
+bool LibraryManager::importLyricsFromSource(const QString& srcPath, const QString& sourceStem, const QString& targetStem) {
     QFileInfo srcInfo(srcPath);
     QString parent = srcInfo.absolutePath();
     QStringList candidates = {
-        stem + ".lrc",
-        stem + QStringLiteral("-歌词.lrc"),
-        stem + QStringLiteral("歌词.lrc"),
+        sourceStem + ".lrc",
+        sourceStem + QStringLiteral("-歌词.lrc"),
+        sourceStem + QStringLiteral("歌词.lrc"),
     };
     for (const QString& name : candidates) {
         QString lrcPath = parent + "/" + name;
@@ -167,7 +189,7 @@ bool LibraryManager::importLyricsFromSource(const QString& srcPath, const QStrin
             if (f.open(QIODevice::ReadOnly)) {
                 QByteArray content = f.readAll();
                 f.close();
-                QString dest = lyricsDir() + "/" + stem + ".lrc";
+                QString dest = lyricsDir() + "/" + targetStem + ".lrc";
                 QFile df(dest);
                 if (df.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                     df.write(content);
@@ -202,30 +224,40 @@ bool LibraryManager::importCoverFromSource(const QString& srcPath, const QString
 
 SongInfo LibraryManager::importSongInternal(const QString& sourcePath, QVector<SongInfo>& songs) {
     QFileInfo srcInfo(sourcePath);
+    if (!m_indexValid || !srcInfo.isFile() || !srcInfo.isReadable()) return {};
+    const QString sourceStem = srcInfo.completeBaseName();
     QString filename = srcInfo.fileName();
-
-    // Check duplicate
-    for (const auto& s : songs) {
-        if (s.filename == filename)
-            return s; // already imported
+    QString stem = sourceStem;
+    int suffix = 1;
+    for (;;) {
+        bool stemUsed = false;
+        for (const auto& song : songs) {
+            if (song.filename.compare(filename, Qt::CaseInsensitive) == 0) {
+                QFile source(sourcePath), existing(songsDir() + "/" + song.filename);
+                if (source.open(QIODevice::ReadOnly) && existing.open(QIODevice::ReadOnly) && source.size() == existing.size()) {
+                    QCryptographicHash a(QCryptographicHash::Sha256), b(QCryptographicHash::Sha256);
+                    if (a.addData(&source) && b.addData(&existing) && a.result() == b.result()) return song;
+                }
+            }
+            if (QFileInfo(song.filename).completeBaseName().compare(stem, Qt::CaseInsensitive) == 0) stemUsed = true;
+        }
+        if (!stemUsed && !QFileInfo::exists(songsDir() + "/" + filename) && !QFileInfo::exists(lyricsDir() + "/" + stem + ".lrc")) break;
+        stem = sourceStem + QStringLiteral(" (%1)").arg(++suffix);
+        filename = stem + (srcInfo.suffix().isEmpty() ? QString() : "." + srcInfo.suffix());
     }
-
-    // Copy file
-    QString dest = songsDir() + "/" + filename;
-    QFile::copy(sourcePath, dest);
-
-    QString format = srcInfo.suffix().toUpper();
-    QString stem = srcInfo.completeBaseName();
+    const QString dest = songsDir() + "/" + filename;
+    if (!QFile::copy(sourcePath, dest)) return {};
+    const QString format = srcInfo.suffix().toUpper();
 
     // Lyrics
-    bool hasLrc = importLyricsFromSource(sourcePath, stem);
+    bool hasLrc = importLyricsFromSource(sourcePath, sourceStem, stem);
 
     // Cover
     int newId = 1;
     for (const auto& s : songs)
         if (s.id >= newId) newId = s.id + 1;
 
-    bool hasCover = importCoverFromSource(sourcePath, stem, newId);
+    bool hasCover = importCoverFromSource(sourcePath, sourceStem, newId);
 
     // Metadata
     QString title, artist, album;
@@ -256,6 +288,7 @@ SongInfo LibraryManager::importSongInternal(const QString& sourcePath, QVector<S
 SongInfo LibraryManager::importSong(const QString& sourcePath) {
     ensureDirs();
     QVector<SongInfo> songs = loadIndex();
+    if (!m_indexValid) return {};
     SongInfo meta = importSongInternal(sourcePath, songs);
 
     QVector<CategoryInfo> cats;
@@ -292,6 +325,7 @@ LibraryManager::ImportResult LibraryManager::importFolder(
     const QVector<int>& recentPlays) {
 
     ensureDirs();
+    if (!m_indexValid) { ImportResult result; result.errors.append(QStringLiteral("媒体库索引不可用")); return result; }
     QVector<SongInfo> songs = currentSongs;
     QVector<CategoryInfo> cats;
     QVector<int> favs = favorites, recents = recentPlays;
@@ -316,11 +350,22 @@ LibraryManager::ImportResult LibraryManager::importFolder(
     ImportResult result;
     QStringList audioExts = {"mp3", "flac", "wav", "aac", "ogg", "m4a", "wma"};
 
-    QDir dir(folderPath);
-    for (const QFileInfo& entry : dir.entryInfoList(QDir::Files)) {
+    if (!QFileInfo(folderPath).isDir() || !QFileInfo(folderPath).isReadable()) {
+        result.errors.append(folderPath);
+        return result;
+    }
+    QDirIterator it(folderPath, QDir::Files | QDir::Readable | QDir::NoSymLinks, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo entry = it.fileInfo();
         QString ext = entry.suffix().toLower();
         if (audioExts.contains(ext)) {
+            const int before = songs.size();
             SongInfo meta = importSongInternal(entry.absoluteFilePath(), songs);
+            if (songs.size() == before) {
+                if (meta.id == 0) result.errors.append(entry.absoluteFilePath());
+                continue;
+            }
             if (meta.hasLyrics) result.lyrics++;
             else result.noLyrics++;
             result.total++;
@@ -339,6 +384,7 @@ LibraryManager::ImportResult LibraryManager::importFiles(
     const QVector<int>& recentPlays) {
 
     ensureDirs();
+    if (!m_indexValid) { ImportResult result; result.errors.append(QStringLiteral("媒体库索引不可用")); return result; }
     QVector<SongInfo> songs = currentSongs;
     QVector<CategoryInfo> cats;
     QVector<int> favs = favorites, recents = recentPlays;
@@ -367,7 +413,10 @@ LibraryManager::ImportResult LibraryManager::importFiles(
         }
         const int before = songs.size();
         SongInfo meta = importSongInternal(path, songs);
-        if (songs.size() == before) continue;
+        if (songs.size() == before) {
+            if (meta.id == 0) result.errors.append(path);
+            continue;
+        }
         if (meta.hasLyrics) result.lyrics++;
         else result.noLyrics++;
         result.total++;
@@ -382,6 +431,7 @@ LibraryManager::ImportResult LibraryManager::importFiles(
 void LibraryManager::deleteSong(int songId, QVector<SongInfo>& songs,
                                  QVector<int>& favorites, QVector<int>& recents,
                                  QVector<CategoryInfo>& categories) {
+    if (!m_indexValid) { emit storageError(QStringLiteral("媒体库索引不可用，未删除歌曲")); return; }
     for (int i = 0; i < songs.size(); i++) {
         if (songs[i].id == songId) {
             // Remove files
@@ -407,7 +457,10 @@ void LibraryManager::deleteSong(int songId, QVector<SongInfo>& songs,
 QString LibraryManager::getAudioPath(int songId, const QVector<SongInfo>& songs) const {
     for (const auto& s : songs) {
         if (s.id == songId)
-            return songsDir() + "/" + s.filename;
+            {
+                const QString path = songsDir() + "/" + s.filename;
+                return QFileInfo::exists(path) ? path : QString();
+            }
     }
     return {};
 }
@@ -436,7 +489,7 @@ QString LibraryManager::readLyrics(const QString& songFilename) const {
 
 CategoryInfo LibraryManager::createCategory(const QString& name, const QString& icon) {
     CategoryInfo cat;
-    cat.id = "cat_" + QString::number(QDateTime::currentMSecsSinceEpoch());
+    cat.id = "cat_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
     cat.name = name;
     cat.icon = icon;
     // We need to persist this, but it requires passing all data
@@ -496,53 +549,70 @@ void LibraryManager::recordPlay(int songId, QVector<int>& recents, QVector<SongI
 
 // ---- Lyrics & Cover Import ----
 
-void LibraryManager::importLyrics(int songId, const QString& content,
+bool LibraryManager::importLyrics(int songId, const QString& content,
                                    QVector<SongInfo>& songs) {
+    if (!m_indexValid) return false;
     for (auto& song : songs) {
-        if (song.id == songId) {
-            QString stem = QFileInfo(song.filename).completeBaseName();
-            QString path = lyricsDir() + "/" + stem + ".lrc";
-            QFile f(path);
-            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                f.write(content.toUtf8());
-                f.close();
-                song.hasLyrics = true;
-            }
-            break;
+        if (song.id != songId) continue;
+        const QString stem = QFileInfo(song.filename).completeBaseName();
+        QSaveFile file(lyricsDir() + "/" + stem + ".lrc");
+        const QByteArray data = content.toUtf8();
+        if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit()) {
+            emit storageError(QStringLiteral("保存歌词失败：%1").arg(file.errorString()));
+            return false;
         }
+        song.hasLyrics = true;
+        return true;
     }
+    return false;
 }
 
-void LibraryManager::importCover(int songId, const QString& imagePath,
+bool LibraryManager::importCover(int songId, const QString& imagePath,
                                   QVector<SongInfo>& songs) {
+    if (!m_indexValid) return false;
+    auto song = std::find_if(songs.begin(), songs.end(), [songId](const SongInfo& s) { return s.id == songId; });
+    if (song == songs.end()) return false;
     QFileInfo fi(imagePath);
     QString ext = fi.suffix().toLower();
-    if (ext != "jpg" && ext != "jpeg" && ext != "png") return;
+    if (ext != "jpg" && ext != "jpeg" && ext != "png") return false;
     if (ext == "jpeg") ext = "jpg";
-    QString dest = coversDir() + "/" + QString::number(songId) + "." + ext;
-    if (QFile::copy(imagePath, dest)) {
-        for (auto& song : songs) {
-            if (song.id == songId) { song.hasCover = true; break; }
-        }
+    QImageReader reader(imagePath);
+    if (!reader.canRead() || fi.size() > 20 * 1024 * 1024) return false;
+    QFile source(imagePath);
+    if (!source.open(QIODevice::ReadOnly)) return false;
+    const QByteArray data = source.readAll();
+    if (source.error() != QFileDevice::NoError) return false;
+    const QString dest = coversDir() + "/" + QString::number(songId) + "." + ext;
+    QSaveFile target(dest);
+    if (!target.open(QIODevice::WriteOnly) || target.write(data) != data.size() || !target.commit()) {
+        emit storageError(QStringLiteral("保存封面失败：%1").arg(target.errorString()));
+        return false;
     }
+    QFile::remove(coversDir() + "/" + QString::number(songId) + (ext == "jpg" ? ".png" : ".jpg"));
+    song->hasCover = true;
+    return true;
 }
 
 // ---- Background ----
 
 QString LibraryManager::setBackgroundImage(const QString& sourcePath) {
     QFileInfo fi(sourcePath);
-    QString ext = fi.suffix();
-    if (ext.isEmpty()) return {};
-    QString dest = m_basePath + "/background." + ext;
-    // Remove old backgrounds
-    QDir dir(m_basePath);
-    for (const QString& name : dir.entryList({"background.*"}, QDir::Files)) {
-        if (dir.absoluteFilePath(name) != dest)
-            QFile::remove(dir.absoluteFilePath(name));
+    const QString ext = fi.suffix().toLower();
+    if (ext.isEmpty() || fi.size() > 20 * 1024 * 1024 || !QImageReader(sourcePath).canRead()) return {};
+    QFile source(sourcePath);
+    if (!source.open(QIODevice::ReadOnly)) return {};
+    const QByteArray data = source.readAll();
+    if (source.error() != QFileDevice::NoError) return {};
+    const QString dest = m_basePath + "/background." + ext;
+    QSaveFile target(dest);
+    if (!target.open(QIODevice::WriteOnly) || target.write(data) != data.size() || !target.commit()) {
+        emit storageError(QStringLiteral("保存背景失败：%1").arg(target.errorString()));
+        return {};
     }
-    if (QFile::copy(sourcePath, dest))
-        return dest;
-    return {};
+    QDir dir(m_basePath);
+    for (const QString& name : dir.entryList({"background.*"}, QDir::Files))
+        if (dir.absoluteFilePath(name) != dest) QFile::remove(dir.absoluteFilePath(name));
+    return dest;
 }
 
 void LibraryManager::clearBackgroundImage() {

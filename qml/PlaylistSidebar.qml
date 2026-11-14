@@ -80,6 +80,7 @@ Rectangle {
                 property var itemData: modelData
 
                 Row {
+                    z: 1
                     anchors.fill: parent
                     anchors.leftMargin: 12
                     anchors.rightMargin: 10
@@ -117,7 +118,7 @@ Rectangle {
                     onClicked: {
                         if (itemData) {
                             AppModel.setCurrentView("player")
-                            AppModel.playSong(itemData.id, itemData.title, itemData.artist)
+                            AppModel.playQueueIndex(index)
                         }
                     }
                 }

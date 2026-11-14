@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import QtQuick.Particles
 
 ApplicationWindow {
     id: mainWindow
@@ -10,7 +9,7 @@ ApplicationWindow {
     height: 740
     minimumWidth: 920
     minimumHeight: 620
-    color: "#f4f6fb"
+    color: "#f3f5f1"
     flags: Qt.FramelessWindowHint | Qt.Window
 
     property string accentColor: AppModel.accentColor || "#7c3aed"
@@ -19,6 +18,10 @@ ApplicationWindow {
 
     visible: !AppModel.miniMode
 
+    Shortcut { sequence: "Ctrl+Right"; onActivated: AppModel.playNext() }
+    Shortcut { sequence: "Ctrl+Left"; onActivated: AppModel.playPrev() }
+    Shortcut { sequence: "Ctrl+L"; onActivated: AppModel.setCurrentView("library") }
+
     Connections {
         target: AppModel
         function onMiniModeChanged() {
@@ -26,11 +29,6 @@ ApplicationWindow {
         }
     }
 
-    onClosing: function(close) {
-        close.accepted = false
-        mainWindow.hide()
-        AppModel.showToast("已最小化到托盘")
-    }
 
     Item {
         anchors.fill: parent
@@ -40,9 +38,9 @@ ApplicationWindow {
             anchors.fill: parent
             gradient: Gradient {
                 orientation: Gradient.Vertical
-                GradientStop { position: 0.0; color: "#fbfcff" }
-                GradientStop { position: 0.48; color: "#f3f6fb" }
-                GradientStop { position: 1.0; color: "#e9eef7" }
+                GradientStop { position: 0.0; color: "#fafbf8" }
+                GradientStop { position: 0.48; color: "#f1f5f1" }
+                GradientStop { position: 1.0; color: "#e5eee7" }
             }
         }
 
@@ -52,7 +50,7 @@ ApplicationWindow {
             width: parent.width * 0.62
             height: width
             radius: width / 2
-            color: Qt.rgba(0.49, 0.23, 0.93, 0.13)
+            color: Qt.rgba(0.30, 0.57, 0.46, 0.10)
         }
 
         Rectangle {
@@ -61,7 +59,7 @@ ApplicationWindow {
             width: parent.width * 0.45
             height: width
             radius: width / 2
-            color: Qt.rgba(0.06, 0.72, 0.86, 0.12)
+            color: Qt.rgba(0.51, 0.70, 0.59, 0.10)
         }
 
         Rectangle {
@@ -70,7 +68,7 @@ ApplicationWindow {
             width: parent.width * 0.64
             height: width * 0.45
             radius: height / 2
-            color: Qt.rgba(0.96, 0.45, 0.63, 0.09)
+            color: Qt.rgba(0.79, 0.73, 0.55, 0.07)
         }
 
         Image {
@@ -95,31 +93,6 @@ ApplicationWindow {
         opacity: 0.18
     }
 
-    ParticleSystem {
-        anchors.fill: parent
-        running: AppModel.playing && AppModel.currentView === "player"
-        z: -1
-
-        Emitter {
-            anchors.fill: parent
-            lifeSpan: 6400
-            size: 3
-            sizeVariation: 3
-            emitRate: 4
-            velocity: PointDirection { y: [-22, -48]; x: [-14, 14] }
-            acceleration: PointDirection { y: 4 }
-        }
-
-        Wander { xVariance: 20; yVariance: 10 }
-
-        ImageParticle {
-            source: "qrc:/particle.svg"
-            color: mainWindow.accentColor
-            colorVariation: 0.24
-            alpha: 0.16
-            alphaVariation: 0.10
-        }
-    }
 
     ColumnLayout {
         anchors.fill: parent

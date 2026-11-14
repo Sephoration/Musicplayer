@@ -4,6 +4,8 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QUrl>
+#include <QPointer>
+#include <QPropertyAnimation>
 
 class AudioEngine : public QObject {
     Q_OBJECT
@@ -43,6 +45,7 @@ signals:
     void errorOccurred(const QString& message);
 
 private:
+    QPointer<QPropertyAnimation> m_fade;
     QMediaPlayer* m_player = nullptr;
     QAudioOutput* m_audioOutput = nullptr;
     double m_volume = 65;

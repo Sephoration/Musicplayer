@@ -144,6 +144,7 @@ public:
     // --- Q_INVOKABLE methods ---
     Q_INVOKABLE void playSong(int songId, const QString& title, const QString& artist);
     Q_INVOKABLE void playNext();
+    Q_INVOKABLE void playQueueIndex(int index);
     Q_INVOKABLE void playPrev();
     Q_INVOKABLE void requestPlay();
     Q_INVOKABLE void seek(double seconds);
@@ -167,6 +168,7 @@ public:
     Q_INVOKABLE void setBackgroundImagePath(const QString& path);
     Q_INVOKABLE void clearBackgroundImagePath();
     Q_INVOKABLE void importLyrics(int songId, const QString& content);
+    Q_INVOKABLE void importLyricsFile(int songId, const QString& path);
     Q_INVOKABLE void importCover(int songId, const QString& path);
     Q_INVOKABLE void createCategory(const QString& name, const QString& icon);
     Q_INVOKABLE void deleteCategory(const QString& id);
@@ -247,7 +249,8 @@ private:
     explicit AppModel(QObject* parent = nullptr);
     static AppModel* s_instance;
 
-    void loadSongInternal(int songId, const QString& title, const QString& artist);
+    bool loadSongInternal(int songId, const QString& title, const QString& artist);
+    void clearCurrentSong();
     int ensureSongInQueue(int songId, const QString& title, const QString& artist);
     void setErrorAutoClear(const QString& msg);
     void saveState();

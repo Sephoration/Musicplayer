@@ -11,6 +11,7 @@ Item {
     FileDialog {
         id: fileDialog
         title: "选择音乐文件"
+        fileMode: FileDialog.OpenFiles
         nameFilters: ["音频文件 (*.mp3 *.flac *.wav *.aac *.ogg *.m4a *.wma)", "所有文件 (*.*)"]
         onAccepted: {
             var paths = []
@@ -19,7 +20,28 @@ Item {
         }
     }
 
+    Menu {
+        id: importMenu
+        MenuItem { text: "选择音乐文件"; onTriggered: fileDialog.open() }
+        MenuItem { text: "选择音乐文件夹"; onTriggered: folderDialog.open() }
+    }
+
     Component.onCompleted: AppModel.loadLibrary()
+
+    Rectangle {
+        anchors.fill: parent
+        z: 20
+        visible: AppModel.libraryLoading
+        color: "#aaf7faf8"
+        radius: 24
+        Column {
+            anchors.centerIn: parent
+            spacing: 12
+            BusyIndicator { running: AppModel.libraryLoading; anchors.horizontalCenter: parent.horizontalCenter }
+            Label { text: "正在导入音乐，请稍候"; color: "#34483d" }
+        }
+        MouseArea { anchors.fill: parent }
+    }
 
     RowLayout {
         anchors.fill: parent
@@ -100,6 +122,18 @@ Item {
                         }
                     }
 
+                    ComboBox {
+                        id: sortBox
+                        Layout.preferredWidth: 112
+                        textRole: "label"
+                        valueRole: "value"
+                        model: [
+                            { label: "默认顺序", value: "default" },
+                            { label: "按标题", value: "title" },
+                            { label: "按艺术家", value: "artist" },
+                            { label: "按时长", value: "duration" }
+                        ]
+                    }
                     Rectangle {
                         Layout.preferredWidth: 96
                         Layout.preferredHeight: 40
@@ -108,12 +142,12 @@ Item {
                             GradientStop { position: 0.0; color: Qt.lighter(mainWindow.accentColor, 1.2) }
                             GradientStop { position: 1.0; color: mainWindow.accentColor }
                         }
-                        Text { anchors.centerIn: parent; text: "导入音乐"; color: "white"; font.pixelSize: 12; font.weight: Font.DemiBold }
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: folderDialog.open() }
+                        Text { anchors.centerIn: parent; text: "导入音乐 ▾"; color: "white"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: importMenu.popup() }
                     }
                 }
 
-                LibraryContent { Layout.fillWidth: true; Layout.fillHeight: true }
+                LibraryContent { Layout.fillWidth: true; Layout.fillHeight: true; sortMode: sortBox.currentValue || "default" }
             }
         }
     }

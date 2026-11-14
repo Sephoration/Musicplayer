@@ -1,14 +1,17 @@
 #include "LrcParser.h"
 #include <QRegularExpression>
 #include <QMap>
+#include <QSet>
+#include <algorithm>
+#include <cmath>
 
 static double parseTimestamp(const QString& ts) {
-    static QRegularExpression rx(R"((\d+):(\d+)[:.](\d+))");
+    static QRegularExpression rx(R"((\d+):(\d+)(?:[:.](\d+))?)");
     auto m = rx.match(ts);
     if (!m.hasMatch()) return 0;
     return m.captured(1).toInt() * 60.0 +
            m.captured(2).toInt() +
-           m.captured(3).toInt() / 100.0;
+           m.captured(3).toDouble() / std::pow(10.0, m.captured(3).size());
 }
 
 static void extractWordTimestamps(const QString& text, QString& cleanText, QVector<LrcWord>& words) {
@@ -39,7 +42,8 @@ LrcData LrcParser::parse(const QString& lrcContent, const QString& translationCo
     LrcData data;
 
     static QRegularExpression metaRx(R"(\[(\w+):(.+?)\])");
-    static QRegularExpression lineRx(R"(\[(\d+:\d+[\.:]\d+)\](.*))");
+    static QRegularExpression lineRx(R"(^((?:\[\d+:\d+(?:[\.:]\d+)?\])+)(.*)$)");
+    static QRegularExpression timeTagRx(R"(\[(\d+:\d+(?:[\.:]\d+)?)\])");
     static QSet<QString> metaKeys = {
         "ti", "ar", "al", "offset", "title", "artist", "album",
         "by", "re", "ve", "length", "language", "tool", "author"
@@ -50,8 +54,11 @@ LrcData LrcParser::parse(const QString& lrcContent, const QString& translationCo
     if (!translationContent.isEmpty()) {
         for (const QString& tl : translationContent.split('\n')) {
             auto tm = lineRx.match(tl.trimmed());
-            if (tm.hasMatch())
-                transMap[parseTimestamp(tm.captured(1))] = tm.captured(2).trimmed();
+            if (tm.hasMatch()) {
+                auto tags = timeTagRx.globalMatch(tm.captured(1));
+                while (tags.hasNext())
+                    transMap[parseTimestamp(tags.next().captured(1))] = tm.captured(2).trimmed();
+            }
         }
     }
 
@@ -69,31 +76,37 @@ LrcData LrcParser::parse(const QString& lrcContent, const QString& translationCo
                 else if (key == "ti" || key == "title") data.title = val;
                 else if (key == "ar" || key == "artist") data.artist = val;
                 else if (key == "al" || key == "album") data.album = val;
+                continue;
             }
-            continue;
         }
 
         // Try timestamp line
         auto lineMatch = lineRx.match(line);
         if (lineMatch.hasMatch()) {
-            double startTime = parseTimestamp(lineMatch.captured(1));
             QString rawText = lineMatch.captured(2).trimmed();
-            QString cleanText;
-            QVector<LrcWord> words;
-            extractWordTimestamps(rawText, cleanText, words);
+            auto tags = timeTagRx.globalMatch(lineMatch.captured(1));
+            while (tags.hasNext()) {
+                const double startTime = parseTimestamp(tags.next().captured(1));
+                QString cleanText;
+                QVector<LrcWord> words;
+                extractWordTimestamps(rawText, cleanText, words);
+                if (words.isEmpty() && !cleanText.isEmpty())
+                    words.append({cleanText, startTime, startTime + 4.0});
 
-            if (words.isEmpty() && !cleanText.isEmpty())
-                words.append({cleanText, startTime, startTime + 4.0});
-
-            LrcLine lrcLine;
-            lrcLine.text = cleanText.isEmpty() ? rawText : cleanText;
-            lrcLine.translation = transMap.value(startTime);
-            lrcLine.startTime = startTime;
-            lrcLine.endTime = startTime + 4.0;
-            lrcLine.words = words;
-            data.lines.append(lrcLine);
+                LrcLine lrcLine;
+                lrcLine.text = cleanText.isEmpty() ? rawText : cleanText;
+                lrcLine.translation = transMap.value(startTime);
+                lrcLine.startTime = startTime;
+                lrcLine.endTime = startTime + 4.0;
+                lrcLine.words = words;
+                data.lines.append(lrcLine);
+            }
         }
     }
+
+    // LRC files are not necessarily ordered by timestamp.
+    std::stable_sort(data.lines.begin(), data.lines.end(),
+                     [](const LrcLine& a, const LrcLine& b) { return a.startTime < b.startTime; });
 
     // Set line end times
     for (int i = 0; i < data.lines.size() - 1; i++)

@@ -1,5 +1,6 @@
 #include "AppModel.h"
 #include <QStandardPaths>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
@@ -10,6 +11,7 @@
 #include <QDateTime>
 #include <QRandomGenerator>
 #include <algorithm>
+#include <memory>
 
 static QString toLocalPath(const QString& value) {
     QUrl url(value);
@@ -36,6 +38,10 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
                        + "/MusicPlayer";
     m_library = new LibraryManager(dataPath, this);
     m_settings = new Settings(this);
+    connect(m_library, &LibraryManager::storageError, this, [this](const QString& message) {
+        m_error = message;
+        emit errorChanged();
+    });
 
     // --- 连接音频引擎信号 ---
     // 时间更新 → 同步歌词 + 频谱
@@ -64,7 +70,10 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
 
     // 歌曲结束 → 自动播放下一首
     connect(m_audioEngine, &AudioEngine::mediaEnded, this, [this]() {
-        playNext();
+        if (m_playMode == "repeat" && m_queueIndex >= 0)
+            playQueueIndex(m_queueIndex);
+        else
+            playNext();
     });
 
     // 播放错误
@@ -105,6 +114,13 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
     });
     m_sleepTimerTick->start();
 
+    // 定期记录进度，并在退出时保存最后的位置。
+    QTimer* stateTimer = new QTimer(this);
+    stateTimer->setInterval(5000);
+    connect(stateTimer, &QTimer::timeout, this, [this]() { if (m_playing) saveState(); });
+    stateTimer->start();
+    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &AppModel::saveState);
+
     // --- 从持久化存储恢复状态 ---
     loadState();
 }
@@ -112,7 +128,7 @@ AppModel::AppModel(QObject* parent) : QObject(parent) {
 // =====================================================================
 //  歌曲加载（内部）
 // =====================================================================
-void AppModel::loadSongInternal(int songId, const QString& title, const QString& artist) {
+bool AppModel::loadSongInternal(int songId, const QString& title, const QString& artist) {
     m_errorTimer->stop();
     m_error.clear();
 
@@ -120,10 +136,14 @@ void AppModel::loadSongInternal(int songId, const QString& title, const QString&
     QString path = m_library->getAudioPath(songId, m_internalSongs);
     if (path.isEmpty()) {
         setErrorAutoClear(QStringLiteral("找不到歌曲文件"));
-        return;
+        return false;
     }
 
     // 加载到播放引擎
+    m_duration = 0;
+    m_currentTime = 0;
+    emit durationChanged();
+    emit currentTimeChanged();
     m_audioEngine->load(QUrl::fromLocalFile(path));
 
     // 更新当前歌曲信息
@@ -152,7 +172,25 @@ void AppModel::loadSongInternal(int songId, const QString& title, const QString&
     }
 
     // 加载频谱分析数据
-    m_audioAnalyzer->loadFile(path);
+    if (m_visualizerMode == "2d") m_audioAnalyzer->loadFile(path);
+    else m_audioAnalyzer->reset();
+    return true;
+}
+
+void AppModel::clearCurrentSong() {
+    m_audioEngine->stop();
+    m_audioAnalyzer->reset();
+    m_lyricsSync->clear();
+    m_currentSongId = 0;
+    m_currentSongTitle.clear();
+    m_currentSongArtist.clear();
+    m_coverUrl.clear();
+    m_currentTime = 0;
+    m_duration = 0;
+    emit currentSongChanged();
+    emit coverUrlChanged();
+    emit currentTimeChanged();
+    emit durationChanged();
 }
 
 // =====================================================================
@@ -196,82 +234,51 @@ int AppModel::ensureSongInQueue(int songId, const QString& title, const QString&
 // =====================================================================
 //  公共接口：播放控制
 // =====================================================================
-void AppModel::playSong(int songId, const QString& title, const QString& artist) {
-    int idx = ensureSongInQueue(songId, title, artist);
-    m_queueIndex = idx;
+void AppModel::playQueueIndex(int index) {
+    if (index < 0 || index >= m_queue.size()) return;
+    const QVariantMap item = m_queue[index].toMap();
+    const int songId = item.value("id").toInt();
+    if (!loadSongInternal(songId, item.value("title").toString(), item.value("artist").toString())) return;
+    m_queueIndex = index;
     emit queueIndexChanged();
-    loadSongInternal(songId, title, artist);
+    if (m_crossfade) m_audioEngine->fadeIn(m_crossfadeDuration * 1000, m_volume);
     m_audioEngine->play();
-    showToast(QStringLiteral("正在播放 ") + title);
-    saveState();
-
-    // 记录播放
     m_library->recordPlay(songId, m_internalRecents, m_internalSongs);
+    m_library->saveIndex(m_internalSongs, m_internalCategories, m_internalFavorites, m_internalRecents);
+    rebuildCategories();
+    saveState();
+}
+
+void AppModel::playSong(int songId, const QString& title, const QString& artist) {
+    if (m_library->getAudioPath(songId, m_internalSongs).isEmpty()) {
+        setErrorAutoClear(QStringLiteral("找不到歌曲文件"));
+        return;
+    }
+    const int idx = ensureSongInQueue(songId, title, artist);
+    playQueueIndex(idx);
 }
 
 void AppModel::playNext() {
-    QVector<SongInfo> songs = m_library->loadIndex();
-    m_internalSongs = songs;
-
     if (m_queue.isEmpty()) return;
-
-    int nextIdx;
-    if (m_playMode == "repeat") {
-        // 单曲循环：保持当前索引
-        nextIdx = (m_queueIndex >= 0 && m_queueIndex < m_queue.size()) ? m_queueIndex : 0;
+    int nextIdx = -1;
+    if (m_playMode == "shuffle" && m_queue.size() > 1 && m_queueIndex >= 0 && m_queueIndex < m_queue.size()) {
+        nextIdx = QRandomGenerator::global()->bounded(m_queue.size() - 1);
+        if (nextIdx >= m_queueIndex) ++nextIdx;
     } else if (m_playMode == "shuffle") {
-        // 随机播放
         nextIdx = QRandomGenerator::global()->bounded(m_queue.size());
-    } else {
-        // 顺序播放
-        nextIdx = (m_queueIndex >= 0 && m_queueIndex < m_queue.size() - 1)
-                  ? m_queueIndex + 1 : -1;
+    } else if (m_queueIndex < 0) {
+        nextIdx = 0;
+    } else if (m_queueIndex + 1 < m_queue.size()) {
+        nextIdx = m_queueIndex + 1;
     }
-
-    if (nextIdx < 0 || nextIdx >= m_queue.size()) return;
-
-    QVariantMap item = m_queue[nextIdx].toMap();
-    int songId = item["id"].toInt();
-
-    const int crossfadeMs = m_crossfadeDuration * 1000;
-
-    // 如果开启了淡入淡出
-    if (m_crossfade && m_playing) {
-        m_audioEngine->fadeOut(crossfadeMs);
-    }
-
-    m_queueIndex = nextIdx;
-    emit queueIndexChanged();
-    loadSongInternal(songId, item["title"].toString(), item["artist"].toString());
-    saveState();
-
-    if (m_crossfade) {
-        m_audioEngine->fadeIn(crossfadeMs, m_volume);
-    }
-    m_audioEngine->play();
+    if (nextIdx >= 0) playQueueIndex(nextIdx);
 }
 
 void AppModel::playPrev() {
     if (m_queue.isEmpty()) return;
-
-    int prevIdx = (m_queueIndex > 0) ? m_queueIndex - 1 : m_queue.size() - 1;
-    QVariantMap item = m_queue[prevIdx].toMap();
-
-    const int crossfadeMs = m_crossfadeDuration * 1000;
-
-    if (m_crossfade && m_playing) {
-        m_audioEngine->fadeOut(crossfadeMs);
-    }
-
-    m_queueIndex = prevIdx;
-    emit queueIndexChanged();
-    loadSongInternal(item["id"].toInt(), item["title"].toString(), item["artist"].toString());
-    saveState();
-
-    if (m_crossfade) {
-        m_audioEngine->fadeIn(crossfadeMs, m_volume);
-    }
-    m_audioEngine->play();
+    if (m_currentTime > 3 && m_queueIndex >= 0) { seek(0); return; }
+    const int prevIdx = (m_queueIndex > 0 && m_queueIndex <= m_queue.size()) ? m_queueIndex - 1 : 0;
+    playQueueIndex(prevIdx);
 }
 
 void AppModel::requestPlay() {
@@ -292,13 +299,14 @@ void AppModel::requestPlay() {
         m_audioEngine->play();
     } else if (m_queueIndex >= 0 && m_queueIndex < m_queue.size()) {
         QVariantMap item = m_queue[m_queueIndex].toMap();
-        loadSongInternal(item["id"].toInt(), item["title"].toString(), item["artist"].toString());
+        if (!loadSongInternal(item["id"].toInt(), item["title"].toString(), item["artist"].toString())) return;
         m_audioEngine->play();
     } else {
         // 从头开始
         m_queueIndex = 0;
+        emit queueIndexChanged();
         QVariantMap item = m_queue[0].toMap();
-        loadSongInternal(item["id"].toInt(), item["title"].toString(), item["artist"].toString());
+        if (!loadSongInternal(item["id"].toInt(), item["title"].toString(), item["artist"].toString())) return;
         m_audioEngine->play();
     }
 }
@@ -443,6 +451,7 @@ void AppModel::rebuildCategories() {
         QJsonObject co = v.toObject();
         CategoryInfo ci;
         ci.id = co["id"].toString();
+        if (ci.id == "all" || ci.id == "favorites" || ci.id == "recent") continue;
         ci.name = co["name"].toString();
         ci.icon = co["icon"].toString();
         for (const auto& sv : co["songIds"].toArray())
@@ -459,7 +468,7 @@ void AppModel::rebuildCategories() {
 
 void AppModel::importFolder(const QString& folderPath) {
     QString localFolderPath = toLocalPath(folderPath);
-    if (localFolderPath.isEmpty()) return;
+    if (localFolderPath.isEmpty() || m_libraryLoading) return;
 
     m_libraryLoading = true;
     emit libraryLoadingChanged();
@@ -470,12 +479,12 @@ void AppModel::importFolder(const QString& folderPath) {
     // 刷新
     loadLibrary();
 
-    showToast(QStringLiteral("导入完成：%1 首歌曲（%2 首有歌词）")
-              .arg(result.total).arg(result.lyrics));
+    showToast(QStringLiteral("导入 %1 首，失败 %2 首（%3 首有歌词）")
+              .arg(result.total).arg(result.errors.size()).arg(result.lyrics));
 }
 
 void AppModel::importFiles(const QStringList& filePaths) {
-    if (filePaths.isEmpty()) return;
+    if (filePaths.isEmpty() || m_libraryLoading) return;
 
     QStringList localPaths;
     for (const QString& f : filePaths) {
@@ -491,10 +500,12 @@ void AppModel::importFiles(const QStringList& filePaths) {
                                           m_internalFavorites, m_internalRecents);
 
     loadLibrary();
-    showToast(QStringLiteral("导入完成：%1 首歌曲").arg(result.total));
+    showToast(QStringLiteral("导入 %1 首，失败 %2 首").arg(result.total).arg(result.errors.size()));
 }
 
 void AppModel::deleteSong(int songId) {
+    if (!m_library->indexValid()) { showToast(QStringLiteral("媒体库不可用")); return; }
+    if (m_currentSongId == songId) clearCurrentSong();
     m_library->deleteSong(songId, m_internalSongs, m_internalFavorites,
                           m_internalRecents, m_internalCategories);
 
@@ -502,12 +513,7 @@ void AppModel::deleteSong(int songId) {
     for (int i = m_queue.size() - 1; i >= 0; i--) {
         if (m_queue[i].toMap()["id"].toInt() == songId) {
             if (i == m_queueIndex) {
-                // 正在播放这首歌 → 停止
-                m_audioEngine->stop();
-                m_playing = false;
-                m_currentSongId = 0;
-                emit playingChanged();
-                emit currentSongChanged();
+                // The current source has already been stopped before deleting its copy.
             }
             m_queue.removeAt(i);
             if (i <= m_queueIndex) m_queueIndex--;
@@ -515,9 +521,10 @@ void AppModel::deleteSong(int songId) {
     }
     emit queueChanged();
     emit queueIndexChanged();
+    saveState();
 
     loadLibrary();
-    showToast(QStringLiteral("已删除"));
+    showToast(QStringLiteral("已从媒体库移除"));
 }
 
 void AppModel::toggleFavorite(int songId) {
@@ -551,17 +558,12 @@ void AppModel::removeFromQueue(int index) {
     if (index < 0 || index >= m_queue.size()) return;
 
     if (index == m_queueIndex) {
-        // 移除当前播放的歌曲
-        m_audioEngine->stop();
-        m_playing = false;
-        m_currentSongId = 0;
-        emit playingChanged();
-        emit currentSongChanged();
-        m_lyricsSync->clear();
+        clearCurrentSong();
     }
 
     m_queue.removeAt(index);
     if (index < m_queueIndex) m_queueIndex--;
+    else if (index == m_queueIndex) m_queueIndex = -1;
     emit queueChanged();
     emit queueIndexChanged();
     saveState();
@@ -591,10 +593,8 @@ void AppModel::replaceQueueAndPlay(const QVariantList& items, int playIndex) {
     emit queueChanged();
     emit queueIndexChanged();
 
-    if (!items.isEmpty() && playIndex >= 0) {
-        QVariantMap item = items[playIndex].toMap();
-        loadSongInternal(item["id"].toInt(), item["title"].toString(), item["artist"].toString());
-        m_audioEngine->play();
+    if (m_queueIndex >= 0) {
+        playQueueIndex(m_queueIndex);
     }
     saveState();
 }
@@ -602,16 +602,9 @@ void AppModel::replaceQueueAndPlay(const QVariantList& items, int playIndex) {
 void AppModel::clearQueue() {
     m_queue.clear();
     m_queueIndex = -1;
-    m_audioEngine->stop();
-    m_playing = false;
-    m_currentSongId = 0;
-    m_currentSongTitle.clear();
-    m_currentSongArtist.clear();
+    clearCurrentSong();
     emit queueChanged();
     emit queueIndexChanged();
-    emit currentSongChanged();
-    emit playingChanged();
-    m_lyricsSync->clear();
     saveState();
 }
 
@@ -624,6 +617,8 @@ void AppModel::setBackgroundImagePath(const QString& path) {
         m_backgroundImage = QUrl::fromLocalFile(dest).toString();
         emit backgroundImageChanged();
         saveState();
+    } else {
+        setErrorAutoClear(QStringLiteral("无法导入背景图片"));
     }
 }
 
@@ -638,19 +633,44 @@ void AppModel::clearBackgroundImagePath() {
 //  歌词/封面导入
 // =====================================================================
 void AppModel::importLyrics(int songId, const QString& content) {
-    m_library->importLyrics(songId, content, m_internalSongs);
+    if (!m_library->importLyrics(songId, content, m_internalSongs)) {
+        setErrorAutoClear(QStringLiteral("歌词导入失败"));
+        return;
+    }
     m_library->saveIndex(m_internalSongs, m_internalCategories,
                          m_internalFavorites, m_internalRecents);
+    if (songId == m_currentSongId) {
+        for (const auto& song : m_internalSongs) if (song.id == songId) {
+            m_lyricsSync->load(m_library->readLyrics(song.filename));
+            m_lyricsSync->update(m_currentTime);
+            break;
+        }
+    }
+    loadLibrary();
     showToast(QStringLiteral("歌词已导入"));
 }
 
+void AppModel::importLyricsFile(int songId, const QString& path) {
+    QFile file(toLocalPath(path));
+    if (!file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024) {
+        setErrorAutoClear(QStringLiteral("无法读取歌词文件，或文件超过 2 MB"));
+        return;
+    }
+    importLyrics(songId, QString::fromUtf8(file.readAll()));
+}
+
 void AppModel::importCover(int songId, const QString& path) {
-    m_library->importCover(songId, path, m_internalSongs);
+    if (!m_library->importCover(songId, toLocalPath(path), m_internalSongs)) {
+        setErrorAutoClear(QStringLiteral("封面导入失败，请选择有效的 JPG 或 PNG 图片"));
+        return;
+    }
     m_library->saveIndex(m_internalSongs, m_internalCategories,
                          m_internalFavorites, m_internalRecents);
     // 如果是当前播放的歌曲，刷新封面
     if (songId == m_currentSongId) {
-        m_coverUrl = QUrl::fromLocalFile(path).toString();
+        m_coverUrl.clear();
+        emit coverUrlChanged();
+        m_coverUrl = QUrl::fromLocalFile(m_library->getCoverPath(songId)).toString();
         emit coverUrlChanged();
     }
     showToast(QStringLiteral("封面已导入"));
@@ -660,7 +680,9 @@ void AppModel::importCover(int songId, const QString& path) {
 //  分类管理
 // =====================================================================
 void AppModel::createCategory(const QString& name, const QString& icon) {
-    CategoryInfo cat = m_library->createCategory(name, icon);
+    const QString cleanName = name.trimmed();
+    if (cleanName.isEmpty()) { showToast(QStringLiteral("请输入分类名称")); return; }
+    CategoryInfo cat = m_library->createCategory(cleanName, icon);
     m_internalCategories.append(cat);
     m_library->saveIndex(m_internalSongs, m_internalCategories,
                          m_internalFavorites, m_internalRecents);
@@ -669,14 +691,18 @@ void AppModel::createCategory(const QString& name, const QString& icon) {
 }
 
 void AppModel::deleteCategory(const QString& id) {
+    if (id == "all" || id == "favorites" || id == "recent") return;
     m_library->deleteCategory(id, m_internalCategories);
+    if (m_activeCategoryId == id) setActiveCategoryId("all");
     m_library->saveIndex(m_internalSongs, m_internalCategories,
                          m_internalFavorites, m_internalRecents);
     rebuildCategories();
 }
 
 void AppModel::renameCategory(const QString& id, const QString& name) {
-    m_library->renameCategory(id, name, m_internalCategories);
+    const QString cleanName = name.trimmed();
+    if (cleanName.isEmpty() || id == "all" || id == "favorites" || id == "recent") return;
+    m_library->renameCategory(id, cleanName, m_internalCategories);
     m_library->saveIndex(m_internalSongs, m_internalCategories,
                          m_internalFavorites, m_internalRecents);
     rebuildCategories();
@@ -700,7 +726,7 @@ void AppModel::removeFromCategory(const QString& categoryId, int songId) {
 //  频谱更新
 // =====================================================================
 void AppModel::updateSpectrum() {
-    if (m_playing && m_audioAnalyzer->ready()) {
+    if (m_playing && m_visualizerMode == "2d" && m_audioAnalyzer->ready()) {
         m_audioAnalyzer->update(m_currentTime);
         m_spectrumData = m_audioAnalyzer->spectrumData();
         emit spectrumDataChanged();
@@ -766,13 +792,23 @@ void AppModel::loadState() {
     m_internalSongs = m_library->loadIndex();
 
     if (m_resumePlayback && m_currentSongId > 0 && !m_internalSongs.isEmpty()) {
-        loadSongInternal(m_currentSongId, m_currentSongTitle, m_currentSongArtist);
         const double lastTime = m_settings->lastTime();
+        // Connect before setting the source: some backends load local files immediately.
+        auto connection = std::make_shared<QMetaObject::Connection>();
         if (lastTime > 0) {
-            m_audioEngine->seek(lastTime);
-            m_currentTime = lastTime;
-            emit currentTimeChanged();
+            *connection = connect(m_audioEngine->mediaPlayer(), &QMediaPlayer::mediaStatusChanged, this,
+                [this, connection, lastTime, songId = m_currentSongId](QMediaPlayer::MediaStatus status) {
+                    if (m_currentSongId != songId) { disconnect(*connection); return; }
+                    if (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia) {
+                        disconnect(*connection);
+                        m_audioEngine->seek(lastTime);
+                    } else if (status == QMediaPlayer::InvalidMedia) {
+                        disconnect(*connection);
+                    }
+                });
         }
+        if (!loadSongInternal(m_currentSongId, m_currentSongTitle, m_currentSongArtist))
+            disconnect(*connection);
     }
 
     // 初始化音量
@@ -803,6 +839,12 @@ void AppModel::setVisualizerColor(const QString& color) {
 void AppModel::setVisualizerMode(const QString& mode) {
     if (m_visualizerMode != mode) {
         m_visualizerMode = mode;
+        if (mode == "2d" && m_currentSongId > 0) {
+            const QString path = m_library->getAudioPath(m_currentSongId, m_internalSongs);
+            if (!path.isEmpty()) m_audioAnalyzer->loadFile(path);
+        } else if (mode != "2d") {
+            m_audioAnalyzer->reset();
+        }
         emit visualizerModeChanged();
         saveState();
     }

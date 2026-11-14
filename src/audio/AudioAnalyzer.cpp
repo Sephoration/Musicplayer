@@ -2,6 +2,9 @@
 #include <QAudioFormat>
 #include <cmath>
 #include <algorithm>
+#include <vector>
+
+static constexpr double Pi = 3.14159265358979323846;
 
 AudioAnalyzer::AudioAnalyzer(QObject* parent) : QObject(parent) {
     m_decoder = new QAudioDecoder(this);
@@ -22,9 +25,11 @@ AudioAnalyzer::~AudioAnalyzer() {
 void AudioAnalyzer::loadFile(const QString& filePath) {
     m_samples.clear();
     m_sampleRate = 0;
+    m_outputRate = 0;
+    m_inputFrames = 0;
     m_ready = false;
     m_decoder->stop();
-    m_decoder->setSource(filePath);
+    m_decoder->setSource(QUrl::fromLocalFile(filePath));
     m_decoder->start();
 }
 
@@ -33,41 +38,31 @@ void AudioAnalyzer::onBufferReady() {
     if (!buf.isValid()) return;
 
     const QAudioFormat& fmt = buf.format();
-    int srcRate = fmt.sampleRate();
-    if (m_sampleRate == 0) m_sampleRate = srcRate;
-
-    int srcChannels = fmt.channelCount();
-    const float* data = buf.constData<float>();
-    if (!data && fmt.sampleFormat() == QAudioFormat::Int16) {
-        // Convert int16 to float
-        const qint16* idata = buf.constData<qint16>();
-        int n = buf.frameCount() * srcChannels;
-        for (int i = 0; i < n; i++)
-            m_samples.append(idata[i] / 32768.0f);
-        return;
+    const int srcRate = fmt.sampleRate();
+    const int channels = fmt.channelCount();
+    if (srcRate <= 0 || channels <= 0) return;
+    if (m_sampleRate == 0) {
+        m_sampleRate = srcRate;
+        m_outputRate = std::min(srcRate, TARGET_SAMPLE_RATE);
     }
-    if (!data) return;
+    if (srcRate != m_sampleRate) return;
 
-    int n = buf.frameCount() * srcChannels;
-    // Convert to mono, optionally downsample
-    float downsampleRatio = (float)srcRate / TARGET_SAMPLE_RATE;
-    for (int i = 0; i < buf.frameCount(); i++) {
-        // Mono mix
+    // Keep the input position across buffers so the waveform stays aligned.
+    for (int frame = 0; frame < buf.frameCount(); ++frame, ++m_inputFrames) {
+        const qint64 target = m_inputFrames * m_outputRate / m_sampleRate;
+        if (target < m_samples.size()) continue;
         float sum = 0;
-        for (int ch = 0; ch < srcChannels; ch++) {
-            sum += data[i * srcChannels + ch];
+        for (int ch = 0; ch < channels; ++ch) {
+            const int index = frame * channels + ch;
+            switch (fmt.sampleFormat()) {
+            case QAudioFormat::Float: sum += buf.constData<float>()[index]; break;
+            case QAudioFormat::Int16: sum += buf.constData<qint16>()[index] / 32768.0f; break;
+            case QAudioFormat::Int32: sum += buf.constData<qint32>()[index] / 2147483648.0f; break;
+            case QAudioFormat::UInt8: sum += (buf.constData<quint8>()[index] - 128) / 128.0f; break;
+            default: return;
+            }
         }
-        float mono = sum / srcChannels;
-
-        // Simple downsampling: only take every Nth sample
-        int targetIdx = (int)(i / downsampleRatio);
-        int currentSize = m_samples.size();
-        if (targetIdx >= currentSize) {
-            m_samples.resize(targetIdx + 1);
-            m_samples[targetIdx] = mono;
-        } else {
-            m_samples[targetIdx] = (m_samples[targetIdx] + mono) * 0.5f;
-        }
+        m_samples.append(sum / channels);
     }
 }
 
@@ -86,6 +81,8 @@ void AudioAnalyzer::reset() {
     m_decoder->stop();
     m_samples.clear();
     m_sampleRate = 0;
+    m_outputRate = 0;
+    m_inputFrames = 0;
     m_ready = false;
     m_spectrumData.clear();
     for (int i = 0; i < NUM_BINS; i++)
@@ -95,7 +92,7 @@ void AudioAnalyzer::reset() {
 QVariantList AudioAnalyzer::computeSpectrum(double currentTimeSeconds) {
     QVariantList result;
 
-    int actualRate = (m_sampleRate > 0) ? TARGET_SAMPLE_RATE : 44100;
+    int actualRate = m_outputRate > 0 ? m_outputRate : TARGET_SAMPLE_RATE;
     int centerOffset = static_cast<int>(currentTimeSeconds * actualRate);
     int start = std::max(0, centerOffset - WINDOW_SIZE / 2);
     int end = std::min((int)m_samples.size(), start + WINDOW_SIZE);
@@ -110,7 +107,7 @@ QVariantList AudioAnalyzer::computeSpectrum(double currentTimeSeconds) {
     std::vector<float> window(WINDOW_SIZE, 0);
     for (int i = start; i < end; i++) {
         int wi = i - start;
-        float hann = 0.5f * (1.0f - std::cos(2.0f * M_PI * wi / (end - start - 1)));
+        float hann = 0.5f * (1.0f - std::cos(2.0f * Pi * wi / (end - start - 1)));
         window[wi] = m_samples[i] * hann;
     }
 
@@ -118,10 +115,11 @@ QVariantList AudioAnalyzer::computeSpectrum(double currentTimeSeconds) {
 
     // Compute magnitudes at log-spaced frequencies
     for (int bin = 0; bin < NUM_BINS; bin++) {
-        double freq = MIN_FREQ * std::pow(MAX_FREQ / MIN_FREQ, (double)bin / (NUM_BINS - 1.0));
+        double maxFreq = std::min(MAX_FREQ, actualRate / 2.0);
+        double freq = MIN_FREQ * std::pow(maxFreq / MIN_FREQ, (double)bin / (NUM_BINS - 1.0));
         double re = 0, im = 0;
         for (int i = 0; i < windowLen; i++) {
-            double phase = 2.0 * M_PI * freq * i / actualRate;
+            double phase = 2.0 * Pi * freq * i / actualRate;
             re += window[i] * std::cos(phase);
             im -= window[i] * std::sin(phase);
         }

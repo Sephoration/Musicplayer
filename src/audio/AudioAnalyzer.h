@@ -38,6 +38,8 @@ private:
     QAudioDecoder* m_decoder = nullptr;
     QVector<float> m_samples;
     int m_sampleRate = 0;
+    int m_outputRate = 0;
+    qint64 m_inputFrames = 0;
     bool m_ready = false;
     QVariantList m_spectrumData;
 

@@ -109,7 +109,7 @@ Rectangle {
             spacing: 6
             WindowButton { btnText: "━"; onClicked: mainWindow.showMinimized() }
             WindowButton { btnText: "□"; onClicked: mainWindow.visibility === Window.Maximized ? mainWindow.showNormal() : mainWindow.showMaximized() }
-            WindowButton { btnText: "✕"; isClose: true; onClicked: mainWindow.hide() }
+            WindowButton { btnText: "✕"; isClose: true; onClicked: mainWindow.close() }
         }
     }
 }

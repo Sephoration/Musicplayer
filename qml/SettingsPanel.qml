@@ -124,8 +124,8 @@ ScrollView {
                     columns: 2
                     rowSpacing: 14
                     columnSpacing: 18
-                    SettingRow { label: "淡入淡出"; Switch { checked: AppModel.crossfade; onCheckedChanged: AppModel.setCrossfade(checked) } }
-                    SettingRow { label: "淡入淡出时长"; SpinBox { from: 1; to: 10; value: AppModel.crossfadeDuration; enabled: AppModel.crossfade; onValueChanged: AppModel.setCrossfadeDuration(value) } }
+                    SettingRow { label: "切歌淡入"; Switch { checked: AppModel.crossfade; onCheckedChanged: AppModel.setCrossfade(checked) } }
+                    SettingRow { label: "淡入时长"; SpinBox { from: 1; to: 10; value: AppModel.crossfadeDuration; enabled: AppModel.crossfade; onValueChanged: AppModel.setCrossfadeDuration(value) } }
                     SettingRow { label: "恢复播放"; Switch { checked: AppModel.resumePlayback; onCheckedChanged: AppModel.setResumePlayback(checked) } }
                 }
             }
